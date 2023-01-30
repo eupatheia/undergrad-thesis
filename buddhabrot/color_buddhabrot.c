@@ -38,7 +38,6 @@ void computeMembership(int size, int start_row, int end_row, int start_col,
 
       if (iter < maxIterations) {
         // escaped
-	printf("%d,%d\n",i,j);
         in_set[i][j] = 0;
       } else {
         // did not escape, in set
@@ -120,34 +119,16 @@ void computeColors(int start_row, int end_row, int start_col, int end_col,
   }
 }
 
-// helper function to assign quadrant coordinates
-void getCoordinates(int i, int size, int * start_col, int * end_col,
-    int * start_row, int * end_row) {
-  if (i == 0) {
-    // top left
-    *start_col = 0;
-    *end_col = size / 2;
-    *start_row = 0;
-    *end_row = size / 2;
-  } else if (i == 1) {
-    // top right
-    *start_col = size / 2;
-    *end_col = size;
-    *start_row = 0;
-    *end_row = size / 2;
-  } else if (i == 2) {
-    // bottom left
-    *start_col = 0;
-    *end_col = size / 2;
-    *start_row = size / 2;
-    *end_row = size;
-  } else {
-    // bottom right
-    *start_col = size / 2;
-    *end_col = size;
-    *start_row = size / 2;
-    *end_row = size;
-  }
+// helper function to divide plane into sections and assign coordinates,
+// where each section is like a "stripe" across the plane,
+// and i is a section number from 0 to numSections - 1
+void getCoordinates(int i, int numSections, int size, int * start_col,
+    int * end_col, int * start_row, int * end_row) {
+  //
+  *start_col = 0;
+  *end_col = size;
+  *start_row = (size / numSections) * i;
+  *end_row = (size / numSections) * (i + 1);
 }
 
 // helper function to initialize a size x size 2D array of int
@@ -268,8 +249,8 @@ int main(int argc, char* argv[]) {
   double timer;
   struct timeval tstart, tend;
   char new_file[100];
-  pthread_t threads[4];
-  struct thread_data data[4];
+  pthread_t * threads;
+  struct thread_data * data;
   int ret1, ret2;  // for error checking
   // each color channel has its own max count
   int max_count_red = 0;
@@ -284,6 +265,7 @@ int main(int argc, char* argv[]) {
       case 'r': xmax = atof(optarg); break;
       case 't': ymax = atof(optarg); break;
       case 'b': ymin = atof(optarg); break;
+      case 'p': numProcesses = atoi(optarg); break;
       case '?': printf("usage: %s -s <size> -l <xmin> -r <xmax> "
         "-b <ymin> -t <ymax> -p <numProcesses>\n", argv[0]); break;
     }
@@ -292,6 +274,19 @@ int main(int argc, char* argv[]) {
   printf("  Num processes = %d\n", numProcesses);
   printf("  X range = [%.4f,%.4f]\n", xmin, xmax);
   printf("  Y range = [%.4f,%.4f]\n", ymin, ymax);
+
+  // allocate memory for thread identifiers
+  threads = malloc(sizeof(pthread_t *) * numProcesses);
+  if (threads == NULL) {
+    printf("Error: failed malloc.  Exiting...\n");
+    exit(1);
+  }
+  // allocate memory for thread function data structs
+  data = malloc(sizeof(struct thread_data *) * numProcesses);
+  if (data == NULL) {
+    printf("Error: failed malloc.  Exiting...\n");
+    exit(1);
+  }
 
   // allocate memory for pixels
   pixels = malloc(sizeof(struct ppm_pixel *) * size);
@@ -318,7 +313,7 @@ int main(int argc, char* argv[]) {
   counts_blue = getIntMatrix(size);
 
   // initialize barrier and mutex
-  ret1 = pthread_barrier_init(&barrier, NULL, 4);
+  ret1 = pthread_barrier_init(&barrier, NULL, numProcesses);
   if (ret1) {
     printf("ERROR: pthread_barrier_init failed\n");
     exit(0);
@@ -333,7 +328,8 @@ int main(int argc, char* argv[]) {
 
   // compute image
   for (int i = 0; i < numProcesses; i++) {
-    getCoordinates(i, size, &start_col, &end_col, &start_row, &end_row);
+    getCoordinates(i, numProcesses, size, &start_col, &end_col,
+        &start_row, &end_row);
     data[i].id = i;
     data[i].size = size;
     data[i].start_row = start_row;
@@ -408,6 +404,10 @@ int main(int argc, char* argv[]) {
   counts_green = NULL;
   free(counts_blue);
   counts_blue = NULL;
+  free(threads);
+  threads = NULL;
+  free(data);
+  data = NULL;
 
   // destroy barrier and mutex
   pthread_barrier_destroy(&barrier);
