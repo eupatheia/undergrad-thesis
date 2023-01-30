@@ -124,7 +124,11 @@ void computeColors(int start_row, int end_row, int start_col, int end_col,
 // and i is a section number from 0 to numSections - 1
 void getCoordinates(int i, int numSections, int size, int * start_col,
     int * end_col, int * start_row, int * end_row) {
-  //
+  // for now, only allow even division of the plane
+  if (size % numSections != 0) {
+    printf("error: %d does not divide evenly by %d", size, numSections);
+    exit(1);
+  }
   *start_col = 0;
   *end_col = size;
   *start_row = (size / numSections) * i;
@@ -258,7 +262,7 @@ int main(int argc, char* argv[]) {
   int max_count_blue = 0;
 
   int opt;
-  while ((opt = getopt(argc, argv, ":s:l:r:t:b:p:")) != -1) {
+  while ((opt = getopt(argc, argv, ":s:l:r:t:b:p:R:G:B:")) != -1) {
     switch (opt) {
       case 's': size = atoi(optarg); break;
       case 'l': xmin = atof(optarg); break;
@@ -266,8 +270,12 @@ int main(int argc, char* argv[]) {
       case 't': ymax = atof(optarg); break;
       case 'b': ymin = atof(optarg); break;
       case 'p': numProcesses = atoi(optarg); break;
+      case 'R': maxIterations_red = atoi(optarg); break;
+      case 'G': maxIterations_green = atoi(optarg); break;
+      case 'B': maxIterations_blue = atoi(optarg); break;
       case '?': printf("usage: %s -s <size> -l <xmin> -r <xmax> "
-        "-b <ymin> -t <ymax> -p <numProcesses>\n", argv[0]); break;
+        "-b <ymin> -t <ymax> -p <numProcesses> -R <maxIterationsRed> "
+        "-G <maxIterationsGreen> -B <maxIterationsBlue>\n", argv[0]); break;
     }
   }
   printf("Generating color buddhabrot with size %dx%d\n", size, size);
@@ -276,13 +284,13 @@ int main(int argc, char* argv[]) {
   printf("  Y range = [%.4f,%.4f]\n", ymin, ymax);
 
   // allocate memory for thread identifiers
-  threads = malloc(sizeof(pthread_t *) * numProcesses);
+  threads = malloc(sizeof(pthread_t) * numProcesses);
   if (threads == NULL) {
     printf("Error: failed malloc.  Exiting...\n");
     exit(1);
   }
   // allocate memory for thread function data structs
-  data = malloc(sizeof(struct thread_data *) * numProcesses);
+  data = malloc(sizeof(struct thread_data) * numProcesses);
   if (data == NULL) {
     printf("Error: failed malloc.  Exiting...\n");
     exit(1);
