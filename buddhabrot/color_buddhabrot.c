@@ -8,8 +8,6 @@
 #include <math.h>
 #include "read_ppm.h"
 
-#define _XOPEN_SOURCE 600
-
 pthread_barrier_t barrier;
 pthread_mutex_t mutex;
 
