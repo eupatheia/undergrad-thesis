@@ -38,6 +38,7 @@ void computeMembership(int size, int start_row, int end_row, int start_col,
 
       if (iter < maxIterations) {
         // escaped
+	printf("%d,%d\n",i,j);
         in_set[i][j] = 0;
       } else {
         // did not escape, in set
@@ -150,8 +151,8 @@ void getCoordinates(int i, int size, int * start_col, int * end_col,
 }
 
 // helper function to initialize a size x size 2D array of int
-void getIntMatrix(int ** counts, int size) {
-  counts = malloc(sizeof(int *) * size);
+int ** getIntMatrix(int size) {
+  int ** counts = malloc(sizeof(int *) * size);
   if (counts == NULL) {
     printf("Error: failed malloc.  Exiting...\n");
     exit(1);
@@ -168,6 +169,7 @@ void getIntMatrix(int ** counts, int size) {
       counts[i][j] = 0;
     }
   }
+  return counts;
 }
 
 struct thread_data {
@@ -306,14 +308,14 @@ int main(int argc, char* argv[]) {
   }
 
   // allocate memory to track set membership
-  getIntMatrix(in_set_red, size);
-  getIntMatrix(in_set_green, size);
-  getIntMatrix(in_set_blue, size);
+  in_set_red = getIntMatrix(size);
+  in_set_green = getIntMatrix(size);
+  in_set_blue = getIntMatrix(size);
 
   // allocate memory for counts
-  getIntMatrix(counts_red, size);
-  getIntMatrix(counts_green, size);
-  getIntMatrix(counts_blue, size);
+  counts_red = getIntMatrix(size);
+  counts_green = getIntMatrix(size);
+  counts_blue = getIntMatrix(size);
 
   // initialize barrier and mutex
   ret1 = pthread_barrier_init(&barrier, NULL, 4);
