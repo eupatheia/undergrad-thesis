@@ -126,7 +126,7 @@ void getCoordinates(int i, int numSections, int size, int * start_col,
     int * end_col, int * start_row, int * end_row) {
   // for now, only allow even division of the plane
   if (size % numSections != 0) {
-    printf("error: %d does not divide evenly by %d", size, numSections);
+    printf("error: %d does not divide evenly by %d\n", size, numSections);
     exit(1);
   }
   *start_col = 0;
