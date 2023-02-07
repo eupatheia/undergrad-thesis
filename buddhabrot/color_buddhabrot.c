@@ -8,8 +8,9 @@
 #include <math.h>
 #include "read_ppm.h"
 
-pthread_barrier_t barrier;
+pthread_cond_t cond;
 pthread_mutex_t mutex;
+pthread_mutex_t cond_mutex;
 
 // Step 1: Determine mandelbrot set membership
 void computeMembership(int size, int start_row, int end_row, int start_col,
@@ -181,6 +182,7 @@ struct thread_data {
   int * max_count_red;  // largest count at a coordinate from counts
   int * max_count_green;
   int * max_count_blue;
+  int * thread_count;
 };
 
 void * thread_function(void * args) {
@@ -210,8 +212,26 @@ void * thread_function(void * args) {
       data->end_col, data->xmin, data->xmax, data->ymin, data->ymax,
       data->max_count_blue, data->in_set_blue, data->counts_blue);
 
-  // wait for all threads before computing colors
-  pthread_barrier_wait(&barrier);
+  pthread_mutex_lock(&mutex);
+  // decrease thread count once a thread reaches this point
+  *(data->thread_count) -= 1;
+  pthread_mutex_unlock(&mutex);
+
+  pthread_mutex_lock(&cond_mutex);
+  // once thread_count reaches zero, all threads have reached here
+  // and now safe to start computing colors
+  if (*data->thread_count == 0) {
+    // broadcast condition satisfied to all waiting threads
+    pthread_cond_broadcast(&cond);
+  }
+  pthread_mutex_unlock(&cond_mutex);
+
+  pthread_mutex_lock(&cond_mutex);
+  // block thread until all others have reached this point
+  while (*data->thread_count != 0) {
+    pthread_cond_wait(&cond, &cond_mutex);
+  }
+  pthread_mutex_unlock(&cond_mutex);
 
   // compute colors for each color channel separately
   computeColors(data->start_row, data->end_row, data->start_col, data->end_col,
@@ -255,11 +275,13 @@ int main(int argc, char* argv[]) {
   char new_file[100];
   pthread_t * threads;
   struct thread_data * data;
-  int ret1, ret2;  // for error checking
+  int ret1, ret2, ret3;  // for error checking
   // each color channel has its own max count
   int max_count_red = 0;
   int max_count_green = 0;
   int max_count_blue = 0;
+  // counter for threads (used in lieu of pthread_barrier_t on mac)
+  int thread_count;
 
   int opt;
   while ((opt = getopt(argc, argv, ":s:l:r:t:b:p:R:G:B:")) != -1) {
@@ -282,6 +304,9 @@ int main(int argc, char* argv[]) {
   printf("  Num processes = %d\n", numProcesses);
   printf("  X range = [%.4f,%.4f]\n", xmin, xmax);
   printf("  Y range = [%.4f,%.4f]\n", ymin, ymax);
+
+  // now that numProcesses is set, use that as max thread count
+  thread_count = numProcesses;
 
   // allocate memory for thread identifiers
   threads = malloc(sizeof(pthread_t) * numProcesses);
@@ -320,14 +345,19 @@ int main(int argc, char* argv[]) {
   counts_green = getIntMatrix(size);
   counts_blue = getIntMatrix(size);
 
-  // initialize barrier and mutex
-  ret1 = pthread_barrier_init(&barrier, NULL, numProcesses);
+  // initialize cond and mutexes
+  ret1 = pthread_cond_init(&cond, NULL);
   if (ret1) {
-    printf("ERROR: pthread_barrier_init failed\n");
+    printf("ERROR: pthread_cond_init failed\n");
     exit(0);
   }
   ret2 = pthread_mutex_init(&mutex, NULL);
   if (ret2) {
+    printf("ERROR: pthread_mutex_init failed\n");
+    exit(0);
+  }
+  ret3 = pthread_mutex_init(&cond_mutex, NULL);
+  if (ret3) {
     printf("ERROR: pthread_mutex_init failed\n");
     exit(0);
   }
@@ -361,6 +391,7 @@ int main(int argc, char* argv[]) {
     data[i].max_count_red = &max_count_red;
     data[i].max_count_green = &max_count_green;
     data[i].max_count_blue = &max_count_blue;
+    data[i].thread_count = &thread_count;
     // create threads
     pthread_create(&threads[i], NULL, thread_function, (void *) &data[i]);
   }
@@ -417,9 +448,10 @@ int main(int argc, char* argv[]) {
   free(data);
   data = NULL;
 
-  // destroy barrier and mutex
-  pthread_barrier_destroy(&barrier);
+  // destroy cond and mutexes
+  pthread_cond_destroy(&cond);
   pthread_mutex_destroy(&mutex);
+  pthread_mutex_destroy(&cond_mutex);
 
   return 0;
 }
