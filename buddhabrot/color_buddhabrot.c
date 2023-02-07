@@ -407,8 +407,9 @@ int main(int argc, char* argv[]) {
 
   // write to file
   new_file[0] = '\0';
-  sprintf(new_file, "color_buddhabrot-%d-%d-%d-%d-%lu.ppm", size, maxIterations_red,
-      maxIterations_green, maxIterations_blue, time(0));
+  sprintf(new_file, "color_buddhabrot-S%d-R%d-G%d-B%d_L%.3f_R%.3f_B%.3f_T%.3f-%lu.ppm",
+      size, maxIterations_red, maxIterations_green, maxIterations_blue,
+      xmin, xmax, ymin, ymax, time(0));
   printf("Writing file %s\n", new_file);
   write_ppm(new_file, pixels, size, size);
 
