@@ -81,7 +81,7 @@ void computeCounts(int size, int start_row, int end_row, int start_col,
             continue; // out of range
           }
           
-	  pthread_mutex_lock(&mutex);
+	        pthread_mutex_lock(&mutex);
           counts[yrow][xcol]++;
           // update max count
           if (counts[yrow][xcol] > *max_count) {
@@ -105,7 +105,7 @@ void computeColors(int start_row, int end_row, int start_col, int end_col,
     for (int j = start_col; j < end_col; j++) {
       float value = 0;
       if (counts[i][j] > 0) {
-	value = log(counts[i][j]) / log(*max_count);
+	      value = log(counts[i][j]) / log(*max_count);
         value = pow(value, factor);
       }
       pixels[i][j].red = value * 255;
