@@ -6,38 +6,28 @@
 #include <pthread.h>
 #include <sys/time.h>
 #include <math.h>
-#include "functions.h"
+#include "transforms.h"
 #include "read_write.h"
 
 // Iterate through the function system and accumulate counts
 void iterate(int size, float xmin, float xmax, float ymin, float ymax, 
-    struct point p, float r, float g, float b, int iterations,
-    struct pix_counts ** counts, struct ppm_pixel * palette, int * maxCount) {
+    struct point p, float c, int iterations, struct pix_counts ** counts,
+    struct ppm_pixel * palette, int * maxCount) {
 
-  // associated color for F_0 is at index 1
-  struct ppm_pixel c0 = palette[1];
-  float r0 = c0.red / 255.0;
-  float g0 = c0.green / 255.0;
-  float b0 = c0.blue / 255.0;
-  // associated color for F_1 is at index 0
-  struct ppm_pixel c1 = palette[0];
-  float r1 = c1.red / 255.0;
-  float g1 = c1.green / 255.0;
-  float b1 = c1.blue / 255.0;
+  // associated color for F_0
+  float c0 = 1.0;
+  // associated color for F_1
+  float c1 = 0.0;
 
   int k, yrow, xcol;
   for (int i = 0; i < iterations; i++) {
     k = rand() % 2;  // both have probability 0.5, here
     if (k == 0) {
       p = affine(p, 0.562482, -0.539599, -0.42992, 0.397861, 0.501088, -0.112404);
-      r = (r + r0) / 2;
-      g = (g + g0) / 2;
-      b = (b + b0) / 2;
+      c = (c + c0) / 2;
     } else {  // k == 1
       p = affine(p, 0.830039, 0.16248, 0.91022, -0.496174, 0.75046, 0.288389);
-      r = (r + r1) / 2;
-      g = (g + g1) / 2;
-      b = (b + b1) / 2;
+      c = (c + c1) / 2;
     }
     p = spherical(p);
     // do not plot first 20 iterations
@@ -51,13 +41,11 @@ void iterate(int size, float xmin, float xmax, float ymin, float ymax,
         continue; // out of range
       }
       // increment counters
-      counts[yrow][xcol].countR += r;
-      counts[yrow][xcol].countG += g;
-      counts[yrow][xcol].countB += b;
-      counts[yrow][xcol].countA++;
-      // update max
-      if (counts[yrow][xcol].countA > *maxCount) {
-        *maxCount = counts[yrow][xcol].countA;
+      counts[yrow][xcol].sum = c;
+      counts[yrow][xcol].alpha++;
+      // update max values
+      if (counts[yrow][xcol].alpha > *maxCount) {
+        *maxCount = counts[yrow][xcol].alpha;
       }
     }
   }
@@ -67,7 +55,7 @@ void computeColorBinary(struct ppm_pixel ** pixels, struct pix_counts ** counts,
     int * maxCount, int size) {
   for (int i = 0; i < size; i++) {
     for (int j = 0; j < size; j++) {
-      if (counts[i][j].countA > 0) {
+      if (counts[i][j].alpha > 0) {
         pixels[i][j].red = 255;
         pixels[i][j].green = 255;
         pixels[i][j].blue = 255;
@@ -84,7 +72,7 @@ void computeColorLog(struct ppm_pixel ** pixels, struct pix_counts ** counts,
     int * maxCount, int size) {
   for (int i = 0; i < size; i++) {
     for (int j = 0; j < size; j++) {
-      int intensity = (log(counts[i][j].countA) / log(*maxCount)) * 255;
+      int intensity = (log(counts[i][j].alpha) / log(*maxCount)) * 255;
       pixels[i][j].red = intensity;
       pixels[i][j].green = intensity;
       pixels[i][j].blue = intensity;
@@ -93,13 +81,23 @@ void computeColorLog(struct ppm_pixel ** pixels, struct pix_counts ** counts,
 }
 
 void computeColor(struct ppm_pixel ** pixels, struct pix_counts ** counts,
-    struct ppm_pixel * palette, int * maxCount, int size) {
+    struct ppm_pixel * palette, int size) {
   for (int i = 0; i < size; i++) {
     for (int j = 0; j < size; j++) {
-      float factor = log(counts[i][j].countA) / counts[i][j].countA;
-      pixels[i][j].red = palette[(int) (counts[i][j].countR * factor) * 255].red;
-      pixels[i][j].green = palette[(int) (counts[i][j].countG * factor) * 255].green;
-      pixels[i][j].blue = palette[(int) (counts[i][j].countB * factor) * 255].blue;
+      if (counts[i][j].alpha > 0) {
+        float factor = log(counts[i][j].alpha) / counts[i][j].alpha;
+        int index = counts[i][j].sum * 255;
+        pixels[i][j] = palette[index];
+        // pixels[i][j].red = round(pow((palette[index].red / 255.0f), factor) * 255.0f);
+        // pixels[i][j].green = round(pow((palette[index].green / 255.0f), factor) * 255.0f);
+        // pixels[i][j].blue = round(pow((palette[index].blue / 255.0f), factor) * 255.0f);
+        printf("%d\n", index);
+      } else {
+        // never visited, color black
+        pixels[i][j].red = 0;
+        pixels[i][j].green = 0;
+        pixels[i][j].blue = 0;
+      }
     }
   }
 }
@@ -109,10 +107,18 @@ void computeColor(struct ppm_pixel ** pixels, struct pix_counts ** counts,
 void initializeCounts(struct pix_counts ** counts, int size) {
   for (int i = 0; i < size; i++) {
     for (int j = 0; j < size; j++) {
-      counts[i][j].countR = 0.0;
-      counts[i][j].countG = 0.0;
-      counts[i][j].countB = 0.0;
-      counts[i][j].countA = 0;
+      counts[i][j].sum = 0.0;
+      counts[i][j].alpha = 0;
+    }
+  }
+}
+
+// helper function to fill 16x16 ppm file with palette colors
+void outputPalette(struct ppm_pixel ** pixels, struct ppm_pixel * palette,
+    int size) {
+  for (int i = 0; i < size; i++) {
+    for (int j = 0; j < size; j++) {
+      pixels[i][j] = palette[i * 16 + j];
     }
   }
 }
@@ -124,10 +130,10 @@ void initializeCounts(struct pix_counts ** counts, int size) {
 int main(int argc, char* argv[]) {
   int size = 900;
   // use bi-unit square
-  float xmin = -1.0;
-  float xmax = 1.0;
-  float ymin = -1.0;
-  float ymax = 1.0;
+  float xmin = -1.5;
+  float xmax = 1.5;
+  float ymin = -1.5;
+  float ymax = 1.5;
   int iterations = 9200000;
   struct ppm_pixel ** pixels = NULL;
   struct pix_counts ** counts = NULL;
@@ -138,6 +144,8 @@ int main(int argc, char* argv[]) {
   float x, y;
   int k;  // to randomly choose a function
   int maxCount = 0;
+
+  srand(time(0));  // give random seed to generator
 
   int opt;
   while ((opt = getopt(argc, argv, ":s:")) != -1) {
@@ -192,13 +200,16 @@ int main(int argc, char* argv[]) {
   struct point seed;
   seed.x = 2 * ((float) rand() / RAND_MAX) - 1;
   seed.y = 2 * ((float) rand() / RAND_MAX) - 1;
-  // random initial color with r,b,g in [0, 1]
-  float initR = (float) rand() / RAND_MAX;
-  float initG = (float) rand() / RAND_MAX;
-  float initB = (float) rand() / RAND_MAX;
-  iterate(size, xmin, xmax, ymin, ymax, seed, initR, initG, initB, iterations,
+  // random initial color in [0, 1]
+  float initColor = (float) rand() / RAND_MAX;
+  iterate(size, xmin, xmax, ymin, ymax, seed, initColor, iterations,
       counts, palette, &maxCount);
-  computeColor(pixels, counts, palette, &maxCount, size);
+  computeColor(pixels, counts, palette, size);
+
+
+
+  
+  
 
 
 
@@ -212,7 +223,7 @@ int main(int argc, char* argv[]) {
 
   // write to file
   new_file[0] = '\0';
-  sprintf(new_file, "flame_S%d_%lu.ppm", size, time(0));
+  sprintf(new_file, "flame_S%d_N%d_%lu.ppm", size, iterations, time(0));
   printf("Writing file %s\n", new_file);
   write_ppm(new_file, pixels, size, size);
 
