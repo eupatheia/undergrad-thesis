@@ -11,10 +11,12 @@
     - coloring based on how quickly points diverge
   - added same coloring scheme to Mandelbrot shader
   - read Sprott's [*Strange Attractors*](https://sprott.physics.wisc.edu/SA.HTM) Ch. 1-4
-
+- [x] **02.21.23: Fractal Flames I**
+  - read ["Fractal Flames"](https://flam3.com/flame_draves.pdf) (Draves and Reckase, 2008)
+  - implemented spherical two-function system with log density display, attempt to add color (see `flame.c`)
+  
 ## Remaining Work Plan
 
-- [ ] Read and implement “Fractal Flames”, 2008, Draves and Reckase
 - [ ] Visualizing fractals in three dimensions, e.g.
   - [ ] Mandelbulb
   - [ ] “Strange Attractors: Creating Patterns in Chaos (Chpts 1-3)”.  
