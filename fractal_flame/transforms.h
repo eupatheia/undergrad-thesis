@@ -3,7 +3,7 @@
 
 // keeps intermediate counts as we iterate the function
 struct pix_counts {
-  float sum;  // sum of accumulated color
+  float color;  // blended color after all iterations, in range [0,1]
   int alpha;  // defines final scaling
 };
 
