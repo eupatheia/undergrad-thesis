@@ -351,7 +351,6 @@ extern void pickFrom4(struct point * p, float * col, transform_ptr * functions,
 }
 
 extern void system1Sym(struct point * p, float * col, struct systemInfo * info) {
-  printf("Symmetry: 1\n");
   float k = randomParam(0, 1);
   if (info->numFunctions == 2) {
     pickFrom2(p, col, info->functions, info->weights, info->affineParams, k, 0);
