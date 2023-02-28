@@ -350,37 +350,38 @@ extern void pickFrom4(struct point * p, float * col, transform_ptr * functions,
   }
 }
 
-extern void system1Sym(struct point * p, float * col, int numFunctions,
-    transform_ptr * functions, float * weights, float * affineParams) {
+extern void system1Sym(struct point * p, float * col, struct systemInfo * info) {
+  printf("Symmetry: 1\n");
   float k = randomParam(0, 1);
-  if (numFunctions == 2) {
-    pickFrom2(p, col, functions, weights, affineParams, k, 0);
-  } else if (numFunctions == 3) {
-    pickFrom3(p, col, functions, weights, affineParams, k, 0);
+  if (info->numFunctions == 2) {
+    pickFrom2(p, col, info->functions, info->weights, info->affineParams, k, 0);
+  } else if (info->numFunctions == 3) {
+    pickFrom3(p, col, info->functions, info->weights, info->affineParams, k, 0);
   } else {
-    pickFrom4(p, col, functions, weights, affineParams, k, 0);
+    pickFrom4(p, col, info->functions, info->weights, info->affineParams, k, 0);
   }
 }
 
-extern void system2Sym(struct point * p, float * col, int numFunctions,
-    transform_ptr * functions, float * weights, float * affineParams) {
+extern void system2Sym(struct point * p, float * col, struct systemInfo * info) {
   float k = randomParam(0, 1);
   if (k < 0.5) {
     // 180 degree rotation, no change in color to maintain symmetry
     *p = rotate(*p, (180 * M_PI) / 180);
   } else {
-    if (numFunctions == 2) {
-      pickFrom2(p, col, functions, weights, affineParams, k, 0.5);
-    } else if (numFunctions == 3) {
-      pickFrom3(p, col, functions, weights, affineParams, k, 0.5);
+    if (info->numFunctions == 2) {
+      pickFrom2(p, col, info->functions, info->weights, info->affineParams,
+          k, 0.5);
+    } else if (info->numFunctions == 3) {
+      pickFrom3(p, col, info->functions, info->weights, info->affineParams,
+          k, 0.5);
     } else {
-      pickFrom4(p, col, functions, weights, affineParams, k, 0.5);
+      pickFrom4(p, col, info->functions, info->weights, info->affineParams,
+          k, 0.5);
     }
   }
 }
 
-extern void system3Sym(struct point * p, float * col, int numFunctions,
-    transform_ptr * functions, float * weights, float * affineParams) {
+extern void system3Sym(struct point * p, float * col, struct systemInfo * info) {
   float k = randomParam(0, 1);
   if (k < 0.333) {
     // 120 degree rotation, no change in color to maintain symmetry
@@ -389,12 +390,15 @@ extern void system3Sym(struct point * p, float * col, int numFunctions,
     // 240 degree rotation, no change in color to maintain symmetry
     *p = rotate(*p, (240 * M_PI) / 180);
   } else {
-    if (numFunctions == 2) {
-      pickFrom2(p, col, functions, weights, affineParams, k, 0.667);
-    } else if (numFunctions == 3) {
-      pickFrom3(p, col, functions, weights, affineParams, k, 0.667);
+    if (info->numFunctions == 2) {
+      pickFrom2(p, col, info->functions, info->weights, info->affineParams,
+          k, 0.667);
+    } else if (info->numFunctions == 3) {
+      pickFrom3(p, col, info->functions, info->weights, info->affineParams,
+          k, 0.667);
     } else {
-      pickFrom4(p, col, functions, weights, affineParams, k, 0.667);
+      pickFrom4(p, col, info->functions, info->weights, info->affineParams,
+          k, 0.667);
     }
   }
 }

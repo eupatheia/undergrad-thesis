@@ -1,6 +1,10 @@
 #ifndef TRANSFORMS_H_
 #define TRANSFORMS_H_
 
+// function pointer type
+typedef struct point (*transform_ptr) (struct point, float, float,
+    float, float, float, float);
+
 // keeps intermediate counts as we iterate the function
 struct pix_counts {
   float color;  // blended color after all iterations, in range [0,1]
@@ -12,9 +16,13 @@ struct point {
   float y;
 };
 
-// function pointer type
-typedef struct point (*transform_ptr) (struct point, float, float,
-    float, float, float, float);
+struct systemInfo {
+  int numFunctions;
+  int symmetry;
+  transform_ptr * functions;
+  float * weights;
+  float * affineParams;
+};
 
 // ============== BASIC TRANSFORMS & HELPERS ==============
 extern struct point affine(struct point p, float a, float b, float c, float d,
@@ -73,12 +81,9 @@ extern void pickFrom4(struct point * p, float * col, transform_ptr * functions,
     float * weights, float * affineParams, float k, float booster);
 
 // random function systems (1, 2, or 3-way symmetry)
-extern void system1Sym(struct point * p, float * col, int numFunctions,
-    transform_ptr * functions, float * weights, float * affineParams);
-extern void system2Sym(struct point * p, float * col, int numFunctions,
-    transform_ptr * functions, float * weights, float * affineParams);
-extern void system3Sym(struct point * p, float * col, int numFunctions,
-    transform_ptr * functions, float * weights, float * affineParams);
+extern void system1Sym(struct point * p, float * col, struct systemInfo * info);
+extern void system2Sym(struct point * p, float * col, struct systemInfo * info);
+extern void system3Sym(struct point * p, float * col, struct systemInfo * info);
 
 
 

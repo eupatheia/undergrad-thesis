@@ -14,36 +14,72 @@ transform_ptr transforms[17] = {linear, sinusoidal, spherical, swirl,
     horseshoe, polar, handkerchief, heart, disk, spiral, hyperbolic, diamond,
     ex, julia, fisheye, exponential, eyefish};
 
+char * funcNames[17] = {"linear", "sinusoidal", "spherical", "swirl",
+    "horseshoe", "polar", "handkerchief", "heart", "disk", "spiral",
+    "hyperbolic", "diamond", "ex", "julia", "fisheye", "exponential",
+    "eyefish"};
+
+// print iterated system info to console
+void printSystemStats(struct systemInfo * info) {
+  printf("F0: weight = %.3f\n(%.6f, %.6f, %.6f, %.6f, %.6f, %.6f)\n",
+      info->weights[0], info->affineParams[0], info->affineParams[1],
+      info->affineParams[2], info->affineParams[3], info->affineParams[4],
+      info->affineParams[5]);
+  printf("F1: weight = %.3f\n(%.6f, %.6f, %.6f, %.6f, %.6f, %.6f)\n",
+      info->weights[1], info->affineParams[6], info->affineParams[7],
+      info->affineParams[8], info->affineParams[9], info->affineParams[10],
+      info->affineParams[11]);
+  if (info->numFunctions > 2) {
+    printf("F2: weight = %.3f\n(%.6f, %.6f, %.6f, %.6f, %.6f, %.6f)\n",
+      info->weights[2], info->affineParams[12], info->affineParams[13],
+      info->affineParams[14], info->affineParams[15], info->affineParams[16],
+      info->affineParams[17]);
+  }
+  if (info->numFunctions > 3) {
+    printf("F2: weight = %.3f\n(%.6f, %.6f, %.6f, %.6f, %.6f, %.6f)\n",
+      info->weights[2], info->affineParams[18], info->affineParams[19],
+      info->affineParams[20], info->affineParams[21], info->affineParams[22],
+      info->affineParams[23]);
+  }
+}
+
 // generate new random function system (2-4 functions, 1-3 symmetry, 6 affine
 // parameters per function)
-void getSystem(int * numFunctions, int * symmetry, transform_ptr * functions,
-    float * weights, float * affineParams) {
-  *numFunctions = (rand() % 3) + 2;  // 2, 3, or 4 functions
-  *symmetry = (rand() % 3) + 1;  // 1, 2, or 3-way symmetry
-  functions = malloc(sizeof(transform_ptr) * *numFunctions);
-  weights = malloc(sizeof(float) * *numFunctions);
-  int numAffine = *numFunctions * 6;
-  affineParams = malloc(sizeof(float) * numAffine);
+struct systemInfo getSystem() {
+  struct systemInfo info;
+  info.numFunctions = (rand() % 3) + 2;  // 2, 3, or 4 functions
+  info.symmetry = (rand() % 3) + 1;  // 1, 2, or 3-way symmetry
+  info.functions = malloc(sizeof(transform_ptr) * info.numFunctions);
+  info.weights = malloc(sizeof(float) * info.numFunctions);
+  int numAffine = info.numFunctions * 6;
+  info.affineParams = malloc(sizeof(float) * numAffine);
 
-  for (int i = 0; i < *numFunctions; i++) {
-    functions[i] = transforms[rand() % 17];
+  printf("Num functions: %d\n", info.numFunctions);
+  printf("Symmetry: %d\n", info.symmetry);
+
+  for (int i = 0; i < info.numFunctions; i++) {
+    int choice = rand() % 17;
+    info.functions[i] = transforms[choice];
+    printf("F%d: %s\n", i, funcNames[choice]);
   }
   float prob;  // function weights must sum to this (excluding rotations)
-  if (*symmetry == 1) {
+  if (info.symmetry == 1) {
     prob = 1;
-  } else if (*symmetry == 2) {
+  } else if (info.symmetry == 2) {
     prob = 0.5;
   } else {  // *symmetry == 3)
     prob = 1.0 / 3.0;
   }
-  for (int i = 0; i < *numFunctions - 1; i++) {
-    weights[i] = randomParam(0, prob);
-    prob -= weights[i];
+  for (int i = 0; i < info.numFunctions - 1; i++) {
+    info.weights[i] = randomParam(0, prob);
+    prob -= info.weights[i];
   }
-  weights[*numFunctions - 1] = prob;
+  info.weights[info.numFunctions - 1] = prob;
   for (int i = 0; i < numAffine; i++) {
-    affineParams[i] = randomParam(-1, 1);
+    info.affineParams[i] = randomParam(-1, 1);
   }
+  printSystemStats(&info);
+  return info;
 }
 
 // Iterate through the function system and accumulate counts
@@ -52,28 +88,18 @@ void iterate(int size, float xmin, float xmax, float ymin, float ymax,
     struct ppm_pixel * palette, int * maxCount) {
 
   int yrow, xcol;
-  int numFunctions, symmetry;
-  transform_ptr * functions = NULL;
-  float * weights = NULL;
-  float * affineParams = NULL;
-
-  getSystem(&numFunctions, &symmetry, functions, weights, affineParams);
-  void (*systemToIterate) (struct point *, float *, int, transform_ptr *,
-      float *, float *);
-  if (symmetry == 1) {
+  struct systemInfo info = getSystem();
+  void (*systemToIterate) (struct point *, float *, struct systemInfo *);
+  if (info.symmetry == 1) {
     systemToIterate = system1Sym;
-  } else if (symmetry == 2) {
+  } else if (info.symmetry == 2) {
     systemToIterate = system2Sym;
   } else {
     systemToIterate = system3Sym;
   }
-
-  // printf("F0: (%.6f, %.6f, %.6f, %.6f, %.6f, %.6f)\n", a0, b0, c0, d0, e0, f0);
-  // printf("F1: (%.6f, %.6f, %.6f, %.6f, %.6f, %.6f)\n", a1, b1, c1, d1, e1, f1);
-  // printf("F2: (%.6f, %.6f, %.6f, %.6f, %.6f, %.6f)\n", a2, b2, c2, d2, e2, f2);
   for (int i = 0; i < iterations; i++) {
     // pick from a system of functions and calculate new point and color
-    systemToIterate(&p, &c, numFunctions, functions, weights, affineParams);
+    systemToIterate(&p, &c, &info);
     // do not plot first 20 iterations
     if (i >= 20) {
       // calculate row and col of this point
@@ -93,9 +119,9 @@ void iterate(int size, float xmin, float xmax, float ymin, float ymax,
     }
   }
   // free arrays
-  free(functions);
-  free(weights);
-  free(affineParams);
+  free(info.functions);
+  free(info.weights);
+  free(info.affineParams);
 }
 
 // no supersampling, white if reached, black otherwise
@@ -311,15 +337,15 @@ struct thread_data {
 
 void * thread_function(void * args) {
   struct thread_data * data = (struct thread_data *) args;
-  printf("Thread %d) sub-image block: cols (%d, %d) to rows (%d, %d)\n",
-      data->id, data->start_col, data->end_col, data->start_row, data->end_row);
+  // printf("Thread %d) sub-image block: cols (%d, %d) to rows (%d, %d)\n",
+  //     data->id, data->start_col, data->end_col, data->start_row, data->end_row);
 
   renderSupersample(data->start_col, data->end_col, data->start_row,
     data->end_row, data->pixels, data->counts, data->palette,
     data->internalSize, data->outputSize, data->maxCount, data->gaussian3,
     data->gaussian5, data->gaussian7);
 
-  printf("Thread %d) finished\n", data->id);
+  // printf("Thread %d) finished\n", data->id);
   return (void *) NULL;
 }
 
@@ -328,6 +354,9 @@ void * thread_function(void * args) {
 //===========================================================//
 
 int main(int argc, char* argv[]) {
+  srand(time(0));  // give random seed to generator
+  int palettes[12] = {11, 13, 20, 26, 30, 31, 34, 35, 41, 57, 82, 87};
+
   int outputSize = 900;
   int internalSize = outputSize * 3;
   // use bi-unit square
@@ -336,7 +365,7 @@ int main(int argc, char* argv[]) {
   float ymin = -1.5;
   float ymax = 1.5;
   int iterations = 40000000;
-  int paletteNum = 30;
+  int paletteNum = palettes[rand() % 12];
   int numProcesses = 4;
   struct ppm_pixel ** pixels = NULL;
   struct pix_counts ** counts = NULL;
@@ -352,8 +381,6 @@ int main(int argc, char* argv[]) {
   float * gaussian3;
   float * gaussian5;
   float * gaussian7;
-
-  srand(time(0));  // give random seed to generator
 
   int opt;
   while ((opt = getopt(argc, argv, ":s:n:c:p:")) != -1) {
