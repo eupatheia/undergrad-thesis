@@ -106,7 +106,7 @@ extern void fillPalette(struct ppm_pixel * palette, const char * filename) {
 
   file = fopen(filename, "r");
   if (file == NULL) {
-    printf("Cannot open file %s\n", filename);
+    printf("Cannot open palette file %s\n", filename);
   }
 
   for (int i = 0; i < 32; i++) {

@@ -9,27 +9,71 @@
 #include "transforms.h"
 #include "read_write.h"
 
+// array of function pointers
+transform_ptr transforms[17] = {linear, sinusoidal, spherical, swirl,
+    horseshoe, polar, handkerchief, heart, disk, spiral, hyperbolic, diamond,
+    ex, julia, fisheye, exponential, eyefish};
+
+// generate new random function system (2-4 functions, 1-3 symmetry, 6 affine
+// parameters per function)
+void getSystem(int * numFunctions, int * symmetry, transform_ptr * functions,
+    float * weights, float * affineParams) {
+  *numFunctions = (rand() % 3) + 2;  // 2, 3, or 4 functions
+  *symmetry = (rand() % 3) + 1;  // 1, 2, or 3-way symmetry
+  functions = malloc(sizeof(transform_ptr) * *numFunctions);
+  weights = malloc(sizeof(float) * *numFunctions);
+  int numAffine = *numFunctions * 6;
+  affineParams = malloc(sizeof(float) * numAffine);
+
+  for (int i = 0; i < *numFunctions; i++) {
+    functions[i] = transforms[rand() % 17];
+  }
+  float prob;  // function weights must sum to this (excluding rotations)
+  if (*symmetry == 1) {
+    prob = 1;
+  } else if (*symmetry == 2) {
+    prob = 0.5;
+  } else {  // *symmetry == 3)
+    prob = 1.0 / 3.0;
+  }
+  for (int i = 0; i < *numFunctions - 1; i++) {
+    weights[i] = randomParam(0, prob);
+    prob -= weights[i];
+  }
+  weights[*numFunctions - 1] = prob;
+  for (int i = 0; i < numAffine; i++) {
+    affineParams[i] = randomParam(-1, 1);
+  }
+}
+
 // Iterate through the function system and accumulate counts
 void iterate(int size, float xmin, float xmax, float ymin, float ymax, 
     struct point p, float c, int iterations, struct pix_counts ** counts,
     struct ppm_pixel * palette, int * maxCount) {
 
-  // associated color for F_0
-  float c0 = 1.0;
-  // associated color for F_1
-  float c1 = 0.0;
+  int yrow, xcol;
+  int numFunctions, symmetry;
+  transform_ptr * functions = NULL;
+  float * weights = NULL;
+  float * affineParams = NULL;
 
-  int k, yrow, xcol;
+  getSystem(&numFunctions, &symmetry, functions, weights, affineParams);
+  void (*systemToIterate) (struct point *, float *, int, transform_ptr *,
+      float *, float *);
+  if (symmetry == 1) {
+    systemToIterate = system1Sym;
+  } else if (symmetry == 2) {
+    systemToIterate = system2Sym;
+  } else {
+    systemToIterate = system3Sym;
+  }
+
+  // printf("F0: (%.6f, %.6f, %.6f, %.6f, %.6f, %.6f)\n", a0, b0, c0, d0, e0, f0);
+  // printf("F1: (%.6f, %.6f, %.6f, %.6f, %.6f, %.6f)\n", a1, b1, c1, d1, e1, f1);
+  // printf("F2: (%.6f, %.6f, %.6f, %.6f, %.6f, %.6f)\n", a2, b2, c2, d2, e2, f2);
   for (int i = 0; i < iterations; i++) {
-    k = rand() % 2;  // both have probability 0.5, here
-    if (k == 0) {
-      p = affine(p, 0.562482, -0.539599, -0.42992, 0.397861, 0.501088, -0.112404);
-      c = (c + c0) / 2;
-    } else {  // k == 1
-      p = affine(p, 0.830039, 0.16248, 0.91022, -0.496174, 0.75046, 0.288389);
-      c = (c + c1) / 2;
-    }
-    p = spherical(p);
+    // pick from a system of functions and calculate new point and color
+    systemToIterate(&p, &c, numFunctions, functions, weights, affineParams);
     // do not plot first 20 iterations
     if (i >= 20) {
       // calculate row and col of this point
@@ -48,6 +92,10 @@ void iterate(int size, float xmin, float xmax, float ymin, float ymax,
       }
     }
   }
+  // free arrays
+  free(functions);
+  free(weights);
+  free(affineParams);
 }
 
 // no supersampling, white if reached, black otherwise
@@ -82,11 +130,12 @@ void computeColorLog(struct ppm_pixel ** pixels, struct pix_counts ** counts,
 }
 
 // color by supersampling and reduce image to outputSize
-void renderSupersample(struct ppm_pixel ** pixels, struct pix_counts ** counts,
+void renderSupersample(int start_row, int end_row, int start_col, int end_col,
+    struct ppm_pixel ** pixels, struct pix_counts ** counts,
     struct ppm_pixel * palette, int internalSize, int outputSize,
     int * maxCount, float * gaussian3, float * gaussian5, float * gaussian7) {
-  for (int i = 0; i < outputSize; i++) {
-    for (int j = 0; j < outputSize; j++) {
+  for (int i = start_row; i < end_row; i++) {
+    for (int j = start_col; j < end_col; j++) {
       int oldi = i * 3 + 1;  // position in internal array
       int oldj = j * 3 + 1;  // position in internal array
       // diameter (num pixels from each side to center, not including center)
@@ -227,6 +276,53 @@ void outputPalette(struct ppm_pixel ** pixels, struct ppm_pixel * palette,
   }
 }
 
+// helper function to divide plane into sections and assign coordinates,
+// where each section is like a "stripe" across the plane,
+// and i is a section number from 0 to numSections - 1
+void getCoordinates(int i, int numSections, int size, int * start_col,
+    int * end_col, int * start_row, int * end_row) {
+  // for now, only allow even division of the plane
+  if (size % numSections != 0) {
+    printf("error: %d does not divide evenly by %d\n", size, numSections);
+    exit(1);
+  }
+  *start_col = 0;
+  *end_col = size;
+  *start_row = (size / numSections) * i;
+  *end_row = (size / numSections) * (i + 1);
+}
+
+struct thread_data {
+  int id;
+  int start_row;
+  int end_row;
+  int start_col;
+  int end_col;
+  struct ppm_pixel ** pixels;
+  struct pix_counts ** counts;
+  struct ppm_pixel * palette;
+  int internalSize;
+  int outputSize;
+  int * maxCount;
+  float * gaussian3;
+  float * gaussian5;
+  float * gaussian7;
+};
+
+void * thread_function(void * args) {
+  struct thread_data * data = (struct thread_data *) args;
+  printf("Thread %d) sub-image block: cols (%d, %d) to rows (%d, %d)\n",
+      data->id, data->start_col, data->end_col, data->start_row, data->end_row);
+
+  renderSupersample(data->start_col, data->end_col, data->start_row,
+    data->end_row, data->pixels, data->counts, data->palette,
+    data->internalSize, data->outputSize, data->maxCount, data->gaussian3,
+    data->gaussian5, data->gaussian7);
+
+  printf("Thread %d) finished\n", data->id);
+  return (void *) NULL;
+}
+
 //===========================================================//
 //===========================================================//
 //===========================================================//
@@ -240,14 +336,17 @@ int main(int argc, char* argv[]) {
   float ymin = -1.5;
   float ymax = 1.5;
   int iterations = 40000000;
+  int paletteNum = 30;
+  int numProcesses = 4;
   struct ppm_pixel ** pixels = NULL;
   struct pix_counts ** counts = NULL;
   struct ppm_pixel * palette = NULL;
   double timer;
   struct timeval tstart, tend;
   char new_file[100];
-  float x, y;
-  int k;  // to randomly choose a function
+  pthread_t * threads;
+  struct thread_data * data;
+  int start_col, end_col, start_row, end_row;
   int maxCount = 0;
   // global normalized gaussian blur matrices
   float * gaussian3;
@@ -257,16 +356,34 @@ int main(int argc, char* argv[]) {
   srand(time(0));  // give random seed to generator
 
   int opt;
-  while ((opt = getopt(argc, argv, ":s:n:")) != -1) {
+  while ((opt = getopt(argc, argv, ":s:n:c:p:")) != -1) {
     switch (opt) {
       case 's': outputSize = atoi(optarg);
                 internalSize = outputSize * 3; break;
       case 'n': iterations = atoi(optarg); break;
-      case '?': printf("usage: %s -s <outputSize> -n <iterations>\n", argv[0]); break;
+      case 'c': paletteNum = atoi(optarg); break;
+      case 'p': numProcesses = atoi(optarg); break;
+      case '?': printf("usage: %s -s <outputSize> -n <iterations>"
+          " -c <paletteNumber> -p <numProcesses>\n", argv[0]); break;
     }
   }
   printf("Generating flame with size %dx%d\n", outputSize, outputSize);
-  printf("    and %d iterations\n", iterations);
+  printf("  Iterations = %d\n", iterations);
+  printf("  Color Palette = %d\n", paletteNum);
+  printf("  Num processes = %d\n", numProcesses);
+
+  // allocate memory for thread identifiers
+  threads = malloc(sizeof(pthread_t) * numProcesses);
+  if (threads == NULL) {
+    printf("Error: failed malloc.  Exiting...\n");
+    exit(1);
+  }
+  // allocate memory for thread function data structs
+  data = malloc(sizeof(struct thread_data) * numProcesses);
+  if (data == NULL) {
+    printf("Error: failed malloc.  Exiting...\n");
+    exit(1);
+  }
 
   // allocate memory for output pixels
   pixels = malloc(sizeof(struct ppm_pixel *) * outputSize);
@@ -304,7 +421,9 @@ int main(int argc, char* argv[]) {
     printf("Error: failed malloc.  Exiting...\n");
     exit(1);
   }
-  fillPalette(palette, "palette30.txt");
+  new_file[0] = '\0';
+  sprintf(new_file, "palettes/palette%d.txt", paletteNum);
+  fillPalette(palette, new_file);
 
   // allocate memory for kernels
   gaussian3 = malloc(sizeof(float) * 3 * 3);
@@ -339,21 +458,31 @@ int main(int argc, char* argv[]) {
 
   iterate(internalSize, xmin, xmax, ymin, ymax, seed, initColor, iterations,
       counts, palette, &maxCount);
-  renderSupersample(pixels, counts, palette, internalSize, outputSize,
-      &maxCount,gaussian3, gaussian5, gaussian7);
-  // renderNoSupersample(pixels, counts, palette, internalSize, outputSize,
-  //     &maxCount);
+  for (int i = 0; i < numProcesses; i++) {
+    getCoordinates(i, numProcesses, outputSize, &start_col, &end_col,
+        &start_row, &end_row);
+    data[i].id = i;
+    data[i].start_row = start_row;
+    data[i].end_row = end_row;
+    data[i].start_col = start_col;
+    data[i].end_col = end_col;
+    data[i].pixels = pixels;
+    data[i].counts = counts;
+    data[i].palette = palette;
+    data[i].internalSize = internalSize;
+    data[i].outputSize = outputSize;
+    data[i].maxCount = &maxCount;
+    data[i].gaussian3 = gaussian3;
+    data[i].gaussian5 = gaussian5;
+    data[i].gaussian7 = gaussian7;
+    // create threads
+    pthread_create(&threads[i], NULL, thread_function, (void *) &data[i]);
+  }
 
-
-
-  
-  
-
-
-
-
-
-
+  // join threads
+  for (int i = 0; i < numProcesses; i++) {
+    pthread_join(threads[i], NULL);
+  }
 
   gettimeofday(&tend, NULL);
   timer = tend.tv_sec - tstart.tv_sec + (tend.tv_usec - tstart.tv_usec)/1.e6;
@@ -362,8 +491,9 @@ int main(int argc, char* argv[]) {
 
   // write to file
   new_file[0] = '\0';
-  sprintf(new_file, "flame_S%d_N%d_%lu.ppm", outputSize, iterations, time(0));
-  printf("Writing file %s\n", new_file);
+  sprintf(new_file, "flame_S%d_N%d_C%d_%lu.ppm", outputSize, iterations,
+      paletteNum, time(0));
+  printf("Writing file %s\n\n", new_file);
   write_ppm(new_file, pixels, outputSize, outputSize);
 
   // free allocated array memory
@@ -387,6 +517,10 @@ int main(int argc, char* argv[]) {
   gaussian5 = NULL;
   free(gaussian7);
   gaussian7 = NULL;
+  free(threads);
+  threads = NULL;
+  free(data);
+  data = NULL;
 
   return 0;
 }

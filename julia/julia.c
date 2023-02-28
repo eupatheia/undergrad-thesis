@@ -100,7 +100,6 @@ struct thread_data {
   float cy;
   struct ppm_pixel ** pixels;
   int maxIterations;
-  int * thread_count;
 };
 
 void * thread_function(void * args) {
@@ -137,8 +136,6 @@ int main(int argc, char* argv[]) {
   char new_file[100];
   pthread_t * threads;
   struct thread_data * data;
-  // counter for threads (used in lieu of pthread_barrier_t on mac)
-  int thread_count;
 
   int opt;
   while ((opt = getopt(argc, argv, ":s:l:r:t:b:p:x:y:i:")) != -1) {
@@ -163,9 +160,6 @@ int main(int argc, char* argv[]) {
   printf("  Num processes = %d\n", numProcesses);
   printf("  X range = [%.4f,%.4f]\n", xmin, xmax);
   printf("  Y range = [%.4f,%.4f]\n", ymin, ymax);
-
-  // now that numProcesses is set, use that as max thread count
-  thread_count = numProcesses;
 
   // allocate memory for thread identifiers
   threads = malloc(sizeof(pthread_t) * numProcesses);
@@ -214,7 +208,6 @@ int main(int argc, char* argv[]) {
     data[i].cy = cy;
     data[i].pixels = pixels;
     data[i].maxIterations = maxIterations;
-    data[i].thread_count = &thread_count;
     // create threads
     pthread_create(&threads[i], NULL, thread_function, (void *) &data[i]);
   }
