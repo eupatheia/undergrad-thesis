@@ -14,6 +14,18 @@
 - [x] **02.21.23: Fractal Flames I**
   - read ["Fractal Flames"](https://flam3.com/flame_draves.pdf) (Draves and Reckase, 2008)
   - implemented spherical two-function system with log density display, attempt to add color (see `flame.c`)
+- [x] **02.28.23: Fractal Flames II**
+  - fixed coloring algorithm
+  - added density estimation supersampling with Gaussian kernels
+  - used multiple threads for rendering step (coloring pixels using counts)
+  - approximated example flames (see `fractal_flames/spherical` and `fractal_flames/linear-swirl-spiral`, cf. Figures 3 and 5 in Draves 2008)
+  - restructured code to allow for random generation of the iterative function system:
+    - number of functions (2-4)
+    - symmetry (1-3)
+    - choice of functions (among 17 possible)
+    - weights of functions (i.e. probability of being chosen while iterating)
+    - affine transform coefficients (all in range [-1,1])
+    - color palette (among 12 possible)
   
 ## Remaining Work Plan
 
