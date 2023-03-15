@@ -317,16 +317,26 @@ float randGaussian(float mean, float stddev) {
 }
 
 // helper function makes a copy of parent into child, then mutates weights and
-// affine params by some random number sampled from a Gaussian distribution
+// affine params by some random number sampled from a Gaussian distribution,
+// assuming functions, weights, and affineParams have been freed
 void mutate(struct systemInfo * child, struct systemInfo * parent) {
   child->numFunctions = parent->numFunctions;
   child->symmetry = parent->symmetry;
-  child->functions = parent->functions;
+  child->functions = malloc(sizeof(transform_ptr) * child->numFunctions);
+  child->weights = malloc(sizeof(float) * child->numFunctions);
+  int numAffine = child->numFunctions * 6;
+  child->affineParams = malloc(sizeof(float) * numAffine);
+
+  // copy over functions
+  for (int i = 0; i < child->numFunctions; i++) {
+    child->functions[i] = parent->functions[i];
+  }
+
   // change params by some small random number
   for (int i = 0; i < child->numFunctions; i++) {
     child->weights[i] = parent->weights[i] + randGaussian(0, 0.1);
   }
-  for (int i = 0; i < child->numFunctions * 6; i++) {
+  for (int i = 0; i < numAffine; i++) {
     child->affineParams[i] = parent->affineParams[i] + randGaussian(0, 0.1);
   }
 }
