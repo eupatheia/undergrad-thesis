@@ -4,8 +4,8 @@ CC=gcc
 
 all: flame transforms
 
-flame: flame.c transforms.c read_write.c
-	$(CC) -g -Wall -Wvla -Werror -Wno-unused-variable flame.c transforms.c read_write.c -o $@ -lm -lpthread
+flame: flame.c transforms.c read_write.c quicksort.c
+	$(CC) -g -Wall -Wvla -Werror -Wno-unused-variable flame.c transforms.c read_write.c quicksort.c -o $@ -lm -lpthread
 
 transforms: transforms.c read_write.c
 	$(CC) -g -Wall -Wvla -Werror -Wno-unused-variable transforms.c read_write.c -o $@ -lm -lpthread

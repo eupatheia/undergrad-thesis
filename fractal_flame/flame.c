@@ -8,6 +8,7 @@
 #include <math.h>
 #include "transforms.h"
 #include "read_write.h"
+#include "quicksort.h"
 
 // array of function pointers
 transform_ptr transforms[17] = {linear, sinusoidal, spherical, swirl,
@@ -18,6 +19,10 @@ char * funcNames[17] = {"linear", "sinusoidal", "spherical", "swirl",
     "horseshoe", "polar", "handkerchief", "heart", "disk", "spiral",
     "hyperbolic", "diamond", "ex", "julia", "fisheye", "exponential",
     "eyefish"};
+
+// save second generated Gaussian for later
+float noise = 0;  // nothing yet
+int savedNoise = 0;  // if 1, use noise instead of regenerating
 
 // print iterated system info to console
 void printSystemStats(struct systemInfo * info) {
@@ -43,12 +48,14 @@ void printSystemStats(struct systemInfo * info) {
   }
 }
 
-// generate new random function system (2-4 functions, 1-3 symmetry, 6 affine
-// parameters per function)
-struct systemInfo getSystem() {
+// generate new random function system with
+//   2 to maxFunctions functions, where maxFunctions = {2,3,4}, ideally
+//   1 to maxSymmetry symmetry, where maxSymmetry = {1,2,3}
+//   6 affine parameters per function
+struct systemInfo getSystem(int maxSymmetry, int maxFunctions) {
   struct systemInfo info;
-  info.numFunctions = (rand() % 3) + 2;  // 2, 3, or 4 functions
-  info.symmetry = (rand() % 3) + 1;  // 1, 2, or 3-way symmetry
+  info.numFunctions = (rand() % (maxFunctions - 1)) + 2;
+  info.symmetry = (rand() % maxSymmetry) + 1;
   info.functions = malloc(sizeof(transform_ptr) * info.numFunctions);
   info.weights = malloc(sizeof(float) * info.numFunctions);
   int numAffine = info.numFunctions * 6;
@@ -67,7 +74,8 @@ struct systemInfo getSystem() {
     prob = 1;
   } else if (info.symmetry == 2) {
     prob = 0.5;
-  } else {  // *symmetry == 3)
+  } else {
+    info.symmetry = 3;  // clamp b/c not handling higher symmetry
     prob = 1.0 / 3.0;
   }
   for (int i = 0; i < info.numFunctions - 1; i++) {
@@ -82,24 +90,24 @@ struct systemInfo getSystem() {
   return info;
 }
 
-// Iterate through the function system and accumulate counts
-void iterate(int size, float xmin, float xmax, float ymin, float ymax, 
-    struct point p, float c, int iterations, struct pix_counts ** counts,
-    struct ppm_pixel * palette, int * maxCount) {
+// Iterate through the function system and accumulate counts,
+// return quality value
+void iterate(struct systemInfo * info, int size, float xmin, float xmax,
+    float ymin, float ymax, struct point p, float c, int iterations,
+    struct pix_counts ** counts, struct ppm_pixel * palette, int * maxCount) {
 
   int yrow, xcol;
-  struct systemInfo info = getSystem();
   void (*systemToIterate) (struct point *, float *, struct systemInfo *);
-  if (info.symmetry == 1) {
+  if (info->symmetry == 1) {
     systemToIterate = system1Sym;
-  } else if (info.symmetry == 2) {
+  } else if (info->symmetry == 2) {
     systemToIterate = system2Sym;
   } else {
     systemToIterate = system3Sym;
   }
   for (int i = 0; i < iterations; i++) {
     // pick from a system of functions and calculate new point and color
-    systemToIterate(&p, &c, &info);
+    systemToIterate(&p, &c, info);
     // do not plot first 20 iterations
     if (i >= 20) {
       // calculate row and col of this point
@@ -118,10 +126,6 @@ void iterate(int size, float xmin, float xmax, float ymin, float ymax,
       }
     }
   }
-  // free arrays
-  free(info.functions);
-  free(info.weights);
-  free(info.affineParams);
 }
 
 // no supersampling, white if reached, black otherwise
@@ -261,7 +265,6 @@ void renderNoSupersample(struct ppm_pixel ** pixels,
   }
 }
 
-
 // helper function to calculate normalized gaussian blur matrix
 void calculateBlurMatrix(float * matrix, int diameter) {
   float sum = 0.0;
@@ -278,6 +281,73 @@ void calculateBlurMatrix(float * matrix, int diameter) {
     for (int n = -diameter; n <= diameter; n++) {
       matrix[((diameter + m) * (diameter * 2 + 1)) + (diameter + n)] /= sum;
     }
+  }
+}
+
+// helper function to calculate quality of a specimen in terms of
+// proportion of black pixels (never reached)
+float calculateQuality(struct pix_counts ** counts, int internalSize) {
+  int colorful = 0;  // num of non-black indices 
+  for (int i = 0; i < internalSize; i++) {
+    for (int j = 0; j < internalSize; j++) {
+      if (counts[i][j].alpha > 0) {
+        colorful++;
+      }
+    }
+  }
+  return (float) colorful / (internalSize * internalSize);
+}
+
+// helper function to sample from a Guassian distribution N(mean, stddev),
+// given pseudo-random numbers from a uniform distribution,
+// using the Box-Mueller Transform:
+// see https://en.wikipedia.org/wiki/Box–Muller_transform
+float randGaussian(float mean, float stddev) {
+  if (savedNoise) {
+    savedNoise = 0;  // reset
+    return noise;
+  }
+  float rand1 = randomParam(0, 1);
+  float rand2 = randomParam(0, 1);
+  float radius = sqrt(-2 * log(rand1));
+  float z = stddev * radius * cos(2 * M_PI * rand2) + mean;
+  noise = stddev * radius * sin(2 * M_PI * rand2) + mean;  // saved for later
+  savedNoise = 1;  // next time use saved noise
+  return z;
+}
+
+// helper function makes a copy of parent into child, then mutates weights and
+// affine params by some random number sampled from a Gaussian distribution
+void mutate(struct systemInfo * child, struct systemInfo * parent) {
+  child->numFunctions = parent->numFunctions;
+  child->symmetry = parent->symmetry;
+  child->functions = parent->functions;
+  // change params by some small random number
+  for (int i = 0; i < child->numFunctions; i++) {
+    child->weights[i] = parent->weights[i] + randGaussian(0, 0.1);
+  }
+  for (int i = 0; i < child->numFunctions * 6; i++) {
+    child->affineParams[i] = parent->affineParams[i] + randGaussian(0, 0.1);
+  }
+}
+
+// helper function to free system info
+void freeSystemInfo(struct systemInfo * info) {
+  // free system info
+  free(info->functions);
+  info->functions = NULL;
+  free(info->weights);
+  info->weights = NULL;
+  free(info->affineParams);
+  info->affineParams = NULL;
+}
+
+// helper function to calculate the max of two ints
+int max(int a, int b) {
+  if (a > b) {
+    return a;
+  } else {
+    return b;
   }
 }
 
@@ -349,6 +419,202 @@ void * thread_function(void * args) {
   return (void *) NULL;
 }
 
+// helper function to write a particular specimen to a file
+void threadOutputSpecimen(int internalSize, int outputSize, int iterations,
+    int numProcesses, struct ppm_pixel ** pixels, struct ppm_pixel * palette,
+    int paletteNum, pthread_t * threads, struct thread_data * data,
+    float * gaussian3, float * gaussian5, float * gaussian7,
+    struct pix_counts ** counts, struct timeval tstart, int * maxCount,
+    int doSearch, int generation) {
+
+  int start_col, end_col, start_row, end_row;
+  char new_file[128];
+  struct timeval tend;
+  double timer;
+
+  for (int i = 0; i < numProcesses; i++) {
+    getCoordinates(i, numProcesses, outputSize, &start_col, &end_col,
+        &start_row, &end_row);
+    data[i].id = i;
+    data[i].start_row = start_row;
+    data[i].end_row = end_row;
+    data[i].start_col = start_col;
+    data[i].end_col = end_col;
+    data[i].pixels = pixels;
+    data[i].counts = counts;
+    data[i].palette = palette;
+    data[i].internalSize = internalSize;
+    data[i].outputSize = outputSize;
+    data[i].maxCount = maxCount;
+    data[i].gaussian3 = gaussian3;
+    data[i].gaussian5 = gaussian5;
+    data[i].gaussian7 = gaussian7;
+    // create threads
+    pthread_create(&threads[i], NULL, thread_function, (void *) &data[i]);
+  }
+
+  // join threads
+  for (int i = 0; i < numProcesses; i++) {
+    pthread_join(threads[i], NULL);
+  }
+
+  gettimeofday(&tend, NULL);
+  timer = tend.tv_sec - tstart.tv_sec + (tend.tv_usec - tstart.tv_usec)/1.e6;
+  printf("Computed fractal flame (%dx%d) in %g seconds\n",
+      outputSize, outputSize, timer);
+
+  // write to file
+  new_file[0] = '\0';
+  if (doSearch) {
+    sprintf(new_file, "gen%d_flame_S%d_N%d_C%d_%lu.ppm", generation, outputSize,
+      iterations, paletteNum, time(0));
+  } else {
+    sprintf(new_file, "flame_S%d_N%d_C%d_%lu.ppm", outputSize, iterations,
+      paletteNum, time(0));
+  }
+  printf("Writing file %s\n\n", new_file);
+  write_ppm(new_file, pixels, outputSize, outputSize);
+}
+
+// generates a specific flame by iteration and multithread coloring;
+// if doSearch = 1 = true, do mu + lambda evolutionary search,
+// else randomly generate one flame
+void generate(int internalSize, int outputSize, float xmin, float xmax,
+    float ymin, float ymax, int iterations, int numProcesses,
+    struct ppm_pixel ** pixels, struct ppm_pixel * palette, int paletteNum,
+    pthread_t * threads, struct thread_data * data, float * gaussian3,
+    float * gaussian5, float * gaussian7, int doSearch) {
+
+  struct timeval tstart;
+  int mu = 1;  // num retained per generation
+  int lambda = 1;  // num reproduced per generation
+  int populationSize;
+  // array of 2D count arrays represents the flames in one generation
+  struct specimen * population;
+  int generations = 0;
+
+  if (doSearch) {
+    populationSize = mu + lambda;
+  } else {
+    populationSize = 1;
+  }
+
+  // allocate memory for population
+  population = malloc(sizeof(struct specimen) * (populationSize));
+  if (population == NULL) {
+    printf("Error: failed malloc.  Exiting...\n");
+    exit(1);
+  }
+  for (int i = 0; i < populationSize; i++) {
+    population[i].counts = malloc(sizeof(struct pix_counts *) * internalSize);
+    if (population[i].counts == NULL) {
+      printf("Error: failed malloc.  Exiting...\n");
+      exit(1);
+    }
+    for (int j = 0; j < internalSize; j++) {
+      population[i].counts[j] = malloc(sizeof(struct pix_counts) * internalSize);
+      if (population[i].counts[j] == NULL) {
+        printf("Error: failed malloc.  Exiting...\n");
+        exit(1);
+      }
+    }
+  }
+
+  // pick random point as seed of orbit, with x,y in range [-1,1]
+  struct point seed;
+  seed.x = 2 * ((float) rand() / RAND_MAX) - 1;
+  seed.y = 2 * ((float) rand() / RAND_MAX) - 1;
+  // random initial color in [0, 1]
+  float initColor = (float) rand() / RAND_MAX;
+
+  gettimeofday(&tstart, NULL);
+
+  if (doSearch) {
+    // random initial specimens
+    for (int i = 0; i < populationSize; i++) {
+      // set all counts to zero
+      initializeCounts(population[i].counts, internalSize);
+      population[i].maxCount = 0;
+      population[i].info = getSystem(1, 4);
+      iterate(&(population[i].info), internalSize, xmin, xmax, ymin, ymax, seed,
+          initColor, iterations, population[i].counts, palette,
+          &(population[i].maxCount));
+      population[i].quality = calculateQuality(population[i].counts, internalSize);
+
+      // write to file
+      printf("Quality %.3f\n", population[i].quality);
+      threadOutputSpecimen(internalSize, outputSize, iterations, numProcesses,
+          pixels, palette, paletteNum, threads, data, gaussian3, gaussian5,
+          gaussian7, population[i].counts, tstart, &population[i].maxCount,
+          doSearch, generations);
+    }
+    generations++;
+    hybridSort(population, 0, populationSize - 1);
+    // do evolutionary search find a high quality specimen (quality >= 0.5)
+    while (population[populationSize - 1].quality < 0.3) {
+      // start another generation
+      // replace the lambda lowest quality specimens
+      for (int i = 0; i < lambda; i++) {
+        freeSystemInfo(&population[i].info);
+        // set all counts to zero again
+        initializeCounts(population[i].counts, internalSize);
+        population[i].maxCount = 0;
+        // make mutated copies of higher-quality specimens
+        mutate(&(population[i].info), &(population[max(i + lambda, populationSize - 1)].info));
+        iterate(&(population[i].info), internalSize, xmin, xmax, ymin, ymax,
+            seed, initColor, iterations, population[i].counts, palette,
+            &(population[i].maxCount));
+        population[i].quality = calculateQuality(population[i].counts,
+            internalSize);
+
+        printf("Quality %.3f\n", population[i].quality);
+        // write to file using multiple threads
+        threadOutputSpecimen(internalSize, outputSize, iterations, numProcesses,
+            pixels, palette, paletteNum, threads, data, gaussian3, gaussian5,
+            gaussian7, population[i].counts, tstart, &population[i].maxCount,
+            doSearch, generations);
+      }
+      generations++;
+      hybridSort(population, 0, populationSize - 1);
+    }
+  } else {
+    // set all counts to zero
+    initializeCounts(population[0].counts, internalSize);
+    population[0].maxCount = 0;
+    population[0].info = getSystem(3, 4);
+    // output one random flame
+    iterate(&(population[0].info), internalSize, xmin, xmax, ymin, ymax, seed,
+        initColor, iterations, population[0].counts, palette,
+        &(population[0].maxCount));
+    population[0].quality = calculateQuality(population[0].counts, internalSize);
+  }
+
+  // print out the highest quality specimen (or the one random specimen)
+  struct specimen bestSpecimen = population[populationSize - 1];
+  printf("%d generations to get final quality %.3f\n", generations,
+      bestSpecimen.quality);
+
+  // write to file using multiple threads
+  threadOutputSpecimen(internalSize, outputSize, iterations, numProcesses,
+    pixels, palette, paletteNum, threads, data, gaussian3, gaussian5, gaussian7,
+    bestSpecimen.counts, tstart, &bestSpecimen.maxCount, doSearch, generations);
+
+  // free arrays
+  for (int i = 0; i < populationSize; i++) {
+    freeSystemInfo(&population[i].info);
+  }
+  for (int i = 0; i < populationSize; i++) {
+    for (int j = 0; j < internalSize; j++) {
+      free(population[i].counts[j]);
+      population[i].counts[j] = NULL;
+    }
+    free(population[i].counts);
+    population[i].counts = NULL;
+  }
+  free(population);
+  population = NULL;
+}
+
 //===========================================================//
 //===========================================================//
 //===========================================================//
@@ -368,30 +634,28 @@ int main(int argc, char* argv[]) {
   int paletteNum = palettes[rand() % 12];
   int numProcesses = 4;
   struct ppm_pixel ** pixels = NULL;
-  struct pix_counts ** counts = NULL;
   struct ppm_pixel * palette = NULL;
-  double timer;
-  struct timeval tstart, tend;
   char new_file[100];
   pthread_t * threads;
   struct thread_data * data;
-  int start_col, end_col, start_row, end_row;
-  int maxCount = 0;
   // global normalized gaussian blur matrices
   float * gaussian3;
   float * gaussian5;
   float * gaussian7;
+  int doSearch = 0;  // default no search, i.e. generate one randomly
 
   int opt;
-  while ((opt = getopt(argc, argv, ":s:n:c:p:")) != -1) {
+  while ((opt = getopt(argc, argv, ":s:n:c:p:e")) != -1) {
     switch (opt) {
       case 's': outputSize = atoi(optarg);
                 internalSize = outputSize * 3; break;
       case 'n': iterations = atoi(optarg); break;
       case 'c': paletteNum = atoi(optarg); break;
       case 'p': numProcesses = atoi(optarg); break;
+      case 'e': doSearch = 1; break;  // no colon in opt string b/c no arg
       case '?': printf("usage: %s -s <outputSize> -n <iterations>"
-          " -c <paletteNumber> -p <numProcesses>\n", argv[0]); break;
+          " -c <paletteNumber> -p <numProcesses> -e [no args, do evolutionary"
+          "search instead of random generation]\n", argv[0]); break;
     }
   }
   printf("Generating flame with size %dx%d\n", outputSize, outputSize);
@@ -426,22 +690,6 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  // allocate memory for internal array of counts
-  counts = malloc(sizeof(struct pix_counts *) * internalSize);
-  if (counts == NULL) {
-    printf("Error: failed malloc.  Exiting...\n");
-    exit(1);
-  }
-  for (int i = 0; i < internalSize; i++) {
-    counts[i] = malloc(sizeof(struct pix_counts) * internalSize);
-    if (counts[i] == NULL) {
-      printf("Error: failed malloc.  Exiting...\n");
-      exit(1);
-    }
-  }
-  // set all struct variables to zero
-  initializeCounts(counts, internalSize);
-
   // allocate memory for palette and fill with colors
   palette = malloc(sizeof(struct ppm_pixel) * 256);
   if (palette == NULL) {
@@ -474,68 +722,17 @@ int main(int argc, char* argv[]) {
   calculateBlurMatrix(gaussian5, 2);
   calculateBlurMatrix(gaussian7, 3);
 
-  // pick random point as seed of orbit, with x,y in range [-1,1]
-  struct point seed;
-  seed.x = 2 * ((float) rand() / RAND_MAX) - 1;
-  seed.y = 2 * ((float) rand() / RAND_MAX) - 1;
-  // random initial color in [0, 1]
-  float initColor = (float) rand() / RAND_MAX;
-
-  gettimeofday(&tstart, NULL);
-
-  iterate(internalSize, xmin, xmax, ymin, ymax, seed, initColor, iterations,
-      counts, palette, &maxCount);
-  for (int i = 0; i < numProcesses; i++) {
-    getCoordinates(i, numProcesses, outputSize, &start_col, &end_col,
-        &start_row, &end_row);
-    data[i].id = i;
-    data[i].start_row = start_row;
-    data[i].end_row = end_row;
-    data[i].start_col = start_col;
-    data[i].end_col = end_col;
-    data[i].pixels = pixels;
-    data[i].counts = counts;
-    data[i].palette = palette;
-    data[i].internalSize = internalSize;
-    data[i].outputSize = outputSize;
-    data[i].maxCount = &maxCount;
-    data[i].gaussian3 = gaussian3;
-    data[i].gaussian5 = gaussian5;
-    data[i].gaussian7 = gaussian7;
-    // create threads
-    pthread_create(&threads[i], NULL, thread_function, (void *) &data[i]);
-  }
-
-  // join threads
-  for (int i = 0; i < numProcesses; i++) {
-    pthread_join(threads[i], NULL);
-  }
-
-  gettimeofday(&tend, NULL);
-  timer = tend.tv_sec - tstart.tv_sec + (tend.tv_usec - tstart.tv_usec)/1.e6;
-  printf("Computed fractal flame (%dx%d) in %g seconds\n",
-      outputSize, outputSize, timer);
-
-  // write to file
-  new_file[0] = '\0';
-  sprintf(new_file, "flame_S%d_N%d_C%d_%lu.ppm", outputSize, iterations,
-      paletteNum, time(0));
-  printf("Writing file %s\n\n", new_file);
-  write_ppm(new_file, pixels, outputSize, outputSize);
+  generate(internalSize, outputSize, xmin, xmax, ymin, ymax, iterations,
+      numProcesses, pixels, palette, paletteNum, threads, data,
+      gaussian3, gaussian5, gaussian7, doSearch);
 
   // free allocated array memory
   for (int i = 0; i < outputSize; i++) {
     free(pixels[i]);
     pixels[i] = NULL;
   }
-  for (int i = 0; i < internalSize; i++) {
-    free(counts[i]);
-    counts[i] = NULL;
-  }
   free(pixels);
   pixels = NULL;
-  free(counts);
-  counts = NULL;
   free(palette);
   palette = NULL;
   free(gaussian3);

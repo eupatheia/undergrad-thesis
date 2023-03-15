@@ -24,6 +24,14 @@ struct systemInfo {
   float * affineParams;
 };
 
+// representation of one phenotype (i.e. a flame)
+struct specimen {
+  struct pix_counts ** counts;
+  struct systemInfo info;
+  int maxCount;
+  float quality;  // eval value
+};
+
 // ============== BASIC TRANSFORMS & HELPERS ==============
 extern struct point affine(struct point p, float a, float b, float c, float d,
     float e, float f);
