@@ -10,7 +10,7 @@
   - drew one-parameter complex quadratic Julia sets as ppm image (see `julia.c`) and with shader (see `julia.cpp` and `julia.fs` in annex repo)
     - coloring based on how quickly points diverge
   - added same coloring scheme to Mandelbrot shader
-  - read Sprott's [*Strange Attractors*](https://sprott.physics.wisc.edu/SA.HTM) Ch. 1-4
+  - read Ch. 1-4 of [*Strange Attractors*](https://sprott.physics.wisc.edu/SA.HTM) (Sprott 1993)
 - [x] **02.21.23: Fractal Flames I**
   - read ["Fractal Flames"](https://flam3.com/flame_draves.pdf) (Draves and Reckase, 2008)
   - implemented spherical two-function system with log density display, attempt to add color (see `flame.c`)
@@ -26,6 +26,12 @@
     - weights of functions (i.e. probability of being chosen while iterating)
     - affine transform coefficients (all in range [-1,1])
     - color palette (among 12 possible)
+- [x] **03.14.23: Fractal Flames III**
+  - read Ch. 2 of *Procedural Content Generation in Games*, ["The Search-based Approach"](https://link.springer.com/content/pdf/10.1007/978-3-319-42716-4_2.pdf)  (Togelius and Shaker, 2016)
+  - implemented mu+lambda evolutionary search on fractal flames using percentage of non-black pixels (nonzero counts) and 0.3 threshold for "interest"
+    - only symmetry 1 used in search to prevent objective function bias towards high symmetry to fill space
+    - search usually stops after 1 (or 2) generations with mu = 1 and lambda = 1, not much improvement over random generation
+  - restructured code to handle random and search options (see `flame.c`)
   
 ## Remaining Work Plan
 
