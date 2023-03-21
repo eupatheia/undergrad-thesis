@@ -26,10 +26,13 @@ struct systemInfo {
 
 // representation of one phenotype (i.e. a flame)
 struct specimen {
+  unsigned long id;
   struct pix_counts ** counts;
   struct systemInfo info;
   int maxCount;
-  float quality;  // eval value
+  // eval values
+  float lyapunov;
+  float colorfulness;
 };
 
 // ============== BASIC TRANSFORMS & HELPERS ==============

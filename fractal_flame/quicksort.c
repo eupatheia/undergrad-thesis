@@ -21,7 +21,7 @@ extern void quicksort(struct specimen * arr, int left, int right) {
   swap(arr, left, pivot);
   int mid = left;
   for (int i = left + 1; i <= right; i++) {
-    if (arr[i].quality < arr[left].quality) {
+    if (arr[i].colorfulness < arr[left].colorfulness) {
       swap(arr, ++mid, i);
     }
   }
@@ -37,7 +37,7 @@ void insertionSort(struct specimen * arr, int left, int right) {
     // all elements at lower indexes are assumed to be already sorted
     int j = i - 1;
     // look for first element where arr[j] < key
-    while (j > -1 && arr[j].quality > key.quality) {
+    while (j > -1 && arr[j].colorfulness > key.colorfulness) {
       // shift element up the list
       arr[j + 1] = arr[j];
       j--;
@@ -59,7 +59,7 @@ void modifiedQuicksort(struct specimen * arr, int left, int right) {
   swap(arr, left, pivot);
   int mid = left;
   for (int i = left + 1; i <= right; i++) {
-    if (arr[i].quality < arr[left].quality) {
+    if (arr[i].colorfulness < arr[left].colorfulness) {
       swap(arr, ++mid, i);
     }
   }

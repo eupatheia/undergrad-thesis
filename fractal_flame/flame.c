@@ -24,6 +24,11 @@ char * funcNames[17] = {"linear", "sinusoidal", "spherical", "swirl",
 float noise = 0;  // nothing yet
 int savedNoise = 0;  // if 1, use noise instead of regenerating
 
+// helper function to calculate distance between two points
+float distance(struct point p1, struct point p2) {
+  return sqrt(pow(p2.x - p1.x, 2) + pow(p2.y - p1.y, 2));
+}
+
 // print iterated system info to console
 void printSystemStats(struct systemInfo * info) {
   printf("F0: weight = %.3f\n(%.6f, %.6f, %.6f, %.6f, %.6f, %.6f)\n",
@@ -90,13 +95,21 @@ struct systemInfo getSystem(int maxSymmetry, int maxFunctions) {
   return info;
 }
 
-// Iterate through the function system and accumulate counts,
-// return quality value
+// Iterate through the function system, accumulate counts,
+// calculate Lyapunov exponent ("the power of 2 by which the difference
+// between two nearly equal points changes on average for each iteration",
+// see Sprott, 1993)
 void iterate(struct systemInfo * info, int size, float xmin, float xmax,
     float ymin, float ymax, struct point p, float c, int iterations,
-    struct pix_counts ** counts, struct ppm_pixel * palette, int * maxCount) {
+    struct pix_counts ** counts, struct ppm_pixel * palette, int * maxCount,
+    float * lyapunovExp) {
 
   int yrow, xcol;
+  // distance between p and q before and after one iteration
+  float distancePre, distancePost;
+  struct point q = {p.x + 0.000001, p.y + 0.000001};  // for lyapunov calc
+  float d = 0.01f;  // arbitrary color attached to comparison point q
+
   void (*systemToIterate) (struct point *, float *, struct systemInfo *);
   if (info->symmetry == 1) {
     systemToIterate = system1Sym;
@@ -105,9 +118,15 @@ void iterate(struct systemInfo * info, int size, float xmin, float xmax,
   } else {
     systemToIterate = system3Sym;
   }
+
+  *lyapunovExp = 0.0f;
+  // clamp at 0.000001 to prevent undefined division by 0
+  distancePre = fmax(distance(p, q), 0.000001f);
   for (int i = 0; i < iterations; i++) {
     // pick from a system of functions and calculate new point and color
     systemToIterate(&p, &c, info);
+    // also iterate comparison point
+    systemToIterate(&q, &d, info);
     // do not plot first 20 iterations
     if (i >= 20) {
       // calculate row and col of this point
@@ -125,7 +144,17 @@ void iterate(struct systemInfo * info, int size, float xmin, float xmax,
         *maxCount = counts[yrow][xcol].alpha;
       }
     }
+    // clamp at 0.000001 to prevent log2(0) = undefined
+    distancePost = fmax(distance(p, q), 0.000001f);
+
+    // printf("pre: %.7f post %.7f log abs change: %.7f\n", distancePre,
+    //     distancePost, log2(fabs(distancePost / distancePre)));
+    
+    // calc log change in distance
+    *lyapunovExp += log2(fabs(distancePost / distancePre));
+    distancePre = distancePost;
   }
+  *lyapunovExp = *lyapunovExp / iterations;  // average
 }
 
 // no supersampling, white if reached, black otherwise
@@ -284,9 +313,9 @@ void calculateBlurMatrix(float * matrix, int diameter) {
   }
 }
 
-// helper function to calculate quality of a specimen in terms of
+// helper function to calculate colorfulness of a specimen in terms of
 // proportion of black pixels (never reached)
-float calculateQuality(struct pix_counts ** counts, int internalSize) {
+float calculateColorfulness(struct pix_counts ** counts, int internalSize) {
   int colorful = 0;  // num of non-black indices 
   for (int i = 0; i < internalSize; i++) {
     for (int j = 0; j < internalSize; j++) {
@@ -339,6 +368,25 @@ void mutate(struct systemInfo * child, struct systemInfo * parent) {
   for (int i = 0; i < numAffine; i++) {
     child->affineParams[i] = parent->affineParams[i] + randGaussian(0, 0.1);
   }
+  printSystemStats(child);
+}
+
+// helper function to calculate objective function,
+// assuming population is sorted by increasing colorfulness;
+// must have colorfulness > 0.15 and positive lyapunov
+// return index of satisfactory specimen, else return -1
+int objectiveMet(struct specimen * population, int populationSize) {
+  for (int i = populationSize - 1; i >= 0; i--) {
+    // look for colorfulness first, stop once colorfulness is too low
+    if (population[i].colorfulness < 0.15) {
+      return -1;
+    }
+    // colorfulness satisfied, look for chaos
+    if (population[i].lyapunov > 0) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 // helper function to free system info
@@ -352,9 +400,9 @@ void freeSystemInfo(struct systemInfo * info) {
   info->affineParams = NULL;
 }
 
-// helper function to calculate the max of two ints
-int max(int a, int b) {
-  if (a > b) {
+// helper function to calculate the min of two ints
+int min(int a, int b) {
+  if (a < b) {
     return a;
   } else {
     return b;
@@ -435,7 +483,7 @@ void threadOutputSpecimen(int internalSize, int outputSize, int iterations,
     int paletteNum, pthread_t * threads, struct thread_data * data,
     float * gaussian3, float * gaussian5, float * gaussian7,
     struct pix_counts ** counts, struct timeval tstart, int * maxCount,
-    int doSearch, int generation) {
+    int doSearch, int generation, unsigned long id) {
 
   int start_col, end_col, start_row, end_row;
   char new_file[128];
@@ -477,10 +525,10 @@ void threadOutputSpecimen(int internalSize, int outputSize, int iterations,
   new_file[0] = '\0';
   if (doSearch) {
     sprintf(new_file, "gen%d_flame_S%d_N%d_C%d_%lu.ppm", generation, outputSize,
-      iterations, paletteNum, time(0));
+      iterations, paletteNum, id);
   } else {
     sprintf(new_file, "flame_S%d_N%d_C%d_%lu.ppm", outputSize, iterations,
-      paletteNum, time(0));
+      paletteNum, id);
   }
   printf("Writing file %s\n\n", new_file);
   write_ppm(new_file, pixels, outputSize, outputSize);
@@ -502,6 +550,8 @@ void generate(int internalSize, int outputSize, float xmin, float xmax,
   // array of 2D count arrays represents the flames in one generation
   struct specimen * population;
   int generations = 0;
+  float lyapunovExp = 0.0;
+  int indexOfBest;
 
   if (doSearch) {
     populationSize = mu + lambda;
@@ -546,68 +596,84 @@ void generate(int internalSize, int outputSize, float xmin, float xmax,
       initializeCounts(population[i].counts, internalSize);
       population[i].maxCount = 0;
       population[i].info = getSystem(1, 4);
+      population[i].id = time(0);
       iterate(&(population[i].info), internalSize, xmin, xmax, ymin, ymax, seed,
           initColor, iterations, population[i].counts, palette,
-          &(population[i].maxCount));
-      population[i].quality = calculateQuality(population[i].counts, internalSize);
-
+          &(population[i].maxCount), &lyapunovExp);
+      
+      population[i].lyapunov = lyapunovExp;
+      population[i].colorfulness = calculateColorfulness(population[i].counts,
+          internalSize);
+      printf("Lyapunov exponent: %.6f\n", lyapunovExp);
+      printf("Colorfulness %.3f\n", population[i].colorfulness);
       // write to file
-      printf("Quality %.3f\n", population[i].quality);
       threadOutputSpecimen(internalSize, outputSize, iterations, numProcesses,
           pixels, palette, paletteNum, threads, data, gaussian3, gaussian5,
           gaussian7, population[i].counts, tstart, &population[i].maxCount,
-          doSearch, generations);
+          doSearch, generations, population[i].id);
     }
     generations++;
-    hybridSort(population, 0, populationSize - 1);
-    // do evolutionary search find a high quality specimen (quality >= 0.5)
-    while (population[populationSize - 1].quality < 0.3) {
+    hybridSort(population, 0, populationSize - 1);  // by colorfulness
+    // do evolutionary search until we find a high quality specimen
+    while ((indexOfBest = objectiveMet(population, populationSize)) == -1) {
       // start another generation
-      // replace the lambda lowest quality specimens
+      // replace the lambda lowest quality specimens (i.e. least colorful)
       for (int i = 0; i < lambda; i++) {
         freeSystemInfo(&population[i].info);
         // set all counts to zero again
         initializeCounts(population[i].counts, internalSize);
         population[i].maxCount = 0;
+        population[i].id = time(0);
         // make mutated copies of higher-quality specimens
-        mutate(&(population[i].info), &(population[max(i + lambda, populationSize - 1)].info));
+        printf("Child %lu mutating from parent %lu\n", population[i].id,
+            population[min(i + lambda, populationSize - 1)].id);
+        mutate(&(population[i].info), &(population[min(i + lambda, populationSize - 1)].info));
         iterate(&(population[i].info), internalSize, xmin, xmax, ymin, ymax,
             seed, initColor, iterations, population[i].counts, palette,
-            &(population[i].maxCount));
-        population[i].quality = calculateQuality(population[i].counts,
+            &(population[i].maxCount), &lyapunovExp);
+        
+        population[i].lyapunov = lyapunovExp;
+        population[i].colorfulness = calculateColorfulness(population[i].counts,
             internalSize);
-
-        printf("Quality %.3f\n", population[i].quality);
+        printf("Lyapunov exponent: %.6f\n", lyapunovExp);
+        printf("Colorfulness %.3f\n", population[i].colorfulness);
         // write to file using multiple threads
         threadOutputSpecimen(internalSize, outputSize, iterations, numProcesses,
             pixels, palette, paletteNum, threads, data, gaussian3, gaussian5,
             gaussian7, population[i].counts, tstart, &population[i].maxCount,
-            doSearch, generations);
+            doSearch, generations, population[i].id);
       }
       generations++;
-      hybridSort(population, 0, populationSize - 1);
+      hybridSort(population, 0, populationSize - 1);  // by colorfulness
     }
+    // print out the highest quality specimen (or the one random specimen)
+    struct specimen bestSpecimen = population[indexOfBest];
+    printf("Best specimen: %lu\n", bestSpecimen.id);
+    printf("%d generations to get final lyapunov %.6f and colorfulness %.3f\n",
+        generations, bestSpecimen.lyapunov, bestSpecimen.colorfulness);
   } else {
     // set all counts to zero
     initializeCounts(population[0].counts, internalSize);
     population[0].maxCount = 0;
-    population[0].info = getSystem(3, 4);
+    population[0].info = getSystem(1, 4);
+    population[0].id = time(0);
     // output one random flame
     iterate(&(population[0].info), internalSize, xmin, xmax, ymin, ymax, seed,
         initColor, iterations, population[0].counts, palette,
-        &(population[0].maxCount));
-    population[0].quality = calculateQuality(population[0].counts, internalSize);
+        &(population[0].maxCount), &lyapunovExp);
+
+    population[0].lyapunov = lyapunovExp;
+    population[0].colorfulness = calculateColorfulness(population[0].counts,
+        internalSize);
+    printf("Lyapunov exponent: %.6f\n", lyapunovExp);
+    printf("Colorfulness %.3f\n", population[0].colorfulness);
+
+    // write to file using multiple threads
+    threadOutputSpecimen(internalSize, outputSize, iterations, numProcesses,
+        pixels, palette, paletteNum, threads, data, gaussian3, gaussian5,
+        gaussian7, population[0].counts, tstart, &population[0].maxCount,
+        doSearch, generations, population[0].id);
   }
-
-  // print out the highest quality specimen (or the one random specimen)
-  struct specimen bestSpecimen = population[populationSize - 1];
-  printf("%d generations to get final quality %.3f\n", generations,
-      bestSpecimen.quality);
-
-  // write to file using multiple threads
-  threadOutputSpecimen(internalSize, outputSize, iterations, numProcesses,
-    pixels, palette, paletteNum, threads, data, gaussian3, gaussian5, gaussian7,
-    bestSpecimen.counts, tstart, &bestSpecimen.maxCount, doSearch, generations);
 
   // free arrays
   for (int i = 0; i < populationSize; i++) {
