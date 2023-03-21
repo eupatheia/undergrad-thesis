@@ -32,12 +32,19 @@
     - only symmetry 1 used in search to prevent objective function bias towards high symmetry to fill space
     - search usually stops after 1 (or 2) generations with mu = 1 and lambda = 1, not much improvement over random generation
   - restructured code to handle random and search options (see `flame.c`)
+- [x] **03.21.23: Fractal Flames IV**
+  - iterated another close point (0.000001 more in each direction) to calculate Lyapunov exponent to measure chaos, as defined in Sprott (1993)
+    - for two arbitrarily close points, the average log ratio of distances before and after an iteration
+    - clamped distances at 0.000001 to prevent undefined division/log errors
+  - defined new objective as colorfulness (percent non-black pixels) >= 0.15 and positve Lyapunov exponent
+    - "best" specimen is defined first by best colorfulness, then by acceptable Lyapunov exponent
+  - only use symmetry 1 across the board (search and random) to get accurate Lyapunov
+  - 1+1 mu+lambda still ideal
   
 ## Remaining Work Plan
 
 - [ ] Visualizing fractals in three dimensions, e.g.
   - [ ] Mandelbulb
-  - [ ] “Strange Attractors: Creating Patterns in Chaos (Chpts 1-3)”.  
   - [ ] Fractal Anatomy: Imaging internal fractal structures (SIGGRAPH paper)
 - [ ] Fractals in procedural graphics: clouds and terrain
   - [ ] Texturing and modeling: A Procedural Approach by Ebert, Musgrave, Peachey, Perlin, and Worley (Chpts “A brief introduction to fractals”, “Fractal solid textures: clouds”, and “procedural fractal terrains”
