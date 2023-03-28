@@ -40,6 +40,9 @@
     - "best" specimen is defined first by best colorfulness, then by acceptable Lyapunov exponent
   - only use symmetry 1 across the board (search and random) to get accurate Lyapunov
   - 1+1 mu+lambda still ideal
+- [x] **03.28.23: Mandelbulb I**
+  - implemented raymarching algorithm on a test scene (see `raymarcher.c`)
+    - phong per-pixel shading, 3D SDFs, distance-aided marching (from learning references: [Intro to Raytracing](https://www.scratchapixel.com/lessons/3d-basic-rendering/introduction-to-ray-tracing/implementing-the-raytracing-algorithm.html) and [Raymarching](https://michaelwalczyk.com/blog-ray-marching.html))
   
 ## Remaining Work Plan
 
