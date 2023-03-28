@@ -34,7 +34,7 @@ julia
 color_buddhabrot
 flame
 functions
-raytracer
+raymarcher
 
 # Other
 .vscode
