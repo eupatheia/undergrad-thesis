@@ -43,12 +43,15 @@
 - [x] **03.28.23: Mandelbulb I**
   - implemented raymarching algorithm on a test scene (see `raymarcher.c`)
     - phong per-pixel shading, 3D SDFs, distance-aided marching (from learning references: [Intro to Raytracing](https://www.scratchapixel.com/lessons/3d-basic-rendering/introduction-to-ray-tracing/implementing-the-raytracing-algorithm.html) and [Raymarching](https://michaelwalczyk.com/blog-ray-marching.html))
+- [x] **04.04.23: Mandelbulb II**
+  - added shadows to `raymarcher.c` (buggy)
+  - initial implementation of Mandelbulb (order 8, 4 iterations) using Hubbard-Douady potential to get fractal SDF in raymarching
+    - algorithm and derivations from [Mandelbulb](https://iquilezles.org/articles/mandelbulb/) (Quilez, 2009)
+    - finds vague shape centered at origin, still buggy (see `mandelbulb.c`)
   
 ## Remaining Work Plan
 
-- [ ] Visualizing fractals in three dimensions, e.g.
-  - [ ] Mandelbulb
-  - [ ] Fractal Anatomy: Imaging internal fractal structures (SIGGRAPH paper)
+- [ ] Fractal Anatomy: Imaging internal fractal structures (SIGGRAPH paper)
 - [ ] Fractals in procedural graphics: clouds and terrain
   - [ ] Texturing and modeling: A Procedural Approach by Ebert, Musgrave, Peachey, Perlin, and Worley (Chpts “A brief introduction to fractals”, “Fractal solid textures: clouds”, and “procedural fractal terrains”
 - [ ] Buddhabrot equivalent for non-quadratic functions?
