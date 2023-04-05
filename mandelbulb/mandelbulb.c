@@ -10,15 +10,17 @@
 
 int size = 300;
 int numProcesses = 4;
-float xmin = -10.0;
-float xmax = 10.0;
-float ymin = -10.0;
-float ymax = 10.0;
-struct vec camPos = {0, 0, -10, 1.0};
-struct vec lightPos = {-10, 10, -5, 1.0};
+float xmin = -2;
+float xmax = 2;
+float ymin = -2;
+float ymax = 2;
+struct vec camPos = {0, 0, -5, 1.0};
+struct vec lightPos = {-10, 10, -3, 1.0};
 float hitRange = 0.001f;
-float maxMarchDistance = 256.0f;
+float maxMarchDistance = 500.0f;
 float stepSize = 0.1;
+struct vec cVal = {1, 1, 1, 0};  // constant parameter in function
+int maxIterations = 4;
 
 struct lighting {
   struct vec ambient;
@@ -26,29 +28,81 @@ struct lighting {
   struct vec specular;
 };
 
+// compute of next iteration of f, given previous v,
+// adapted from https://iquilezles.org/articles/mandelbulb/:
+// finds the eighth power of v, doubles the angle, and adds c
+struct vec f(struct vec v) {
+  // cartesian to spherical coordinates
+  float r = sqrt(dot(v, v));
+  float theta = acos(v.y / r);
+  float phi = atan2(v.x, v.z);
+
+  // radius to 8th power
+  r = pow(r, 8.0);
+  // multiply all angles by 8
+  theta = theta * 8.0;
+  phi = phi * 8.0;
+
+  // convert back to cartesian coordinates
+  struct vec w;
+  w.x = r * sin(theta) * sin(phi);
+  w.y = r * cos(theta);
+  w.z = r * sin(theta) * cos(phi);
+
+  return vAdd(w, cVal);
+}
+
+// optimized computation of next iteration of f, given previous v,
+// adapted from https://iquilezles.org/articles/mandelbulb/:
+// finds the eighth power of v, doubles the angle, and adds c
+struct vec optf(struct vec v) {
+  // replace pow(v, 8) by individual multiplications
+  float x = v.x;
+  float x2 = x * x;
+  float x4 = x2 * x2;
+  float y = v.y;
+  float y2 = y * y;
+  float y4 = y2 * y2;
+  float z = v.z;
+  float z2 = z * z;
+  float z4 = z2 * z2;
+
+  // replace trig functions
+  float k3 = x2 + z2;
+  float k2 = 1.0 / sqrt(k3 * k3 * k3 * k3 * k3 * k3 * k3);
+  float k1 = x4 + y4 + z4 - (6.0 * y2 * z2) - (6.0 * x2 * y2) + (2.0 * z2 * x2);
+  float k4 = x2 - y2 + z2;
+
+  struct vec w;
+  w.x = 64.0 * x * y * z * (x2 - z2) * k4 * (x4 - 6.0 * x2 * z2 + z4) * k1 * k2;
+  w.y = (-16.0 * y2 * k3 * k4 * k4) + (k1 * k1);
+  w.z = -8.0 * y * k4 * ((x4 * x4) - (28.0 * x4 * x2 * z2) + (70.0 * x4 * z4)
+      - (28.0 * x2 * z2 * z4) + (z4 * z4)) * k1 * k2;
+
+  return vAdd(w, cVal);
+}
+
 // calculate SDF (signed distance function) from a position pos
-// to a sphere defined at center center and radius radius 
-float sdSphere(struct vec pos, struct vec center, float radius) {
-  return distance(pos, center) - radius;
-}
-
-// calculate SDF of a position pos from a plane at height h with normal n
-float sdPlane(struct vec pos, struct vec norm, float height) {
-  norm = normalize(norm);
-  return dot(pos, norm) + height;
-}
-
-// calculate min SDF to any object in scene
+// to the mandelbulb object, returning distance
+// adapted from https://iquilezles.org/articles/mandelbulb/:
 float sdScene(struct vec pos) {
-  float sdf;
-  struct vec c1 = {6, 0, 0, 1.0};
-  float r1 = 3.0;
-  struct vec c2 = {0, 3, 0, 1.0};
-  float r2 = 2.0;
-  sdf = fmin(sdSphere(pos, c1, r1), sdSphere(pos, c2, r2));
-  struct vec planeNorm = {0, 1, 0, 0};
-  sdf = fmin(sdf, sdPlane(pos, planeNorm, 10));
-  return sdf;
+  struct vec w = pos;
+  float dw = 1.0;  // gradient of potential
+  float m = length(w);  // modulus of a point (i.e. length, |w|)
+  int iter = 0;
+  while (iter < maxIterations && m < 16) {
+    // compute gradient dw_{n+1} = 8 * |w_n|^7 * dw_n
+    dw = 8.0 * pow(m, 7) * dw + 1.0;
+    // get next iteration
+    w = f(w);
+    m = length(w);
+    iter++;
+  }
+  // calc distance d = |w| * log|w| / |dw|;
+  // note this is modulus, not abs val;
+  // multiply 0.25 to offset errors in sdf
+  // (see https://iquilezles.org/articles/distancefractals/)
+  return (m * log(m) / dw) * 0.25;
 }
 
 // calculate the normal at some position pos on a surface
@@ -91,25 +145,30 @@ struct lighting phongShading(struct vec pos, struct vec norm, struct vec La,
   return shades;
 }
 
-// BUGGY(?) distance-aided raymarch:
+// distance-aided raymarch:
 // given a normalized ray with tail at pos,
 // performs raymarch and returns 1 if hit, else 0,
-// and returns position of surface in hitPos if hit
+// and if hit, returns position of surface in hitPos
 int DAraymarch(struct vec pos, struct vec ray, struct vec * hitPos) {
   float totalDistance = 0.0f;
+  float d = 0;
   while (totalDistance < maxMarchDistance) {
     struct vec currPos = vAdd(pos, scale(ray, totalDistance));
-    float minSDF = fabsf(sdScene(currPos));
-    if (minSDF < hitRange) {
+    float d = sdScene(currPos);
+    // d = fabsf(d);
+    // printf("%.3f\n", d);
+    if (d < hitRange) {
       // close enough, call a hit
+      // printf("HIT\n");
       hitPos->x = currPos.x;
       hitPos->y = currPos.y;
       hitPos->z = currPos.z;
       hitPos->a = currPos.a;
       return 1;
     }
-    totalDistance += minSDF;
+    totalDistance += d;
   }
+  // printf("----------------\n");
   // never hit any surface in scene
   return 0;
 }
@@ -117,12 +176,14 @@ int DAraymarch(struct vec pos, struct vec ray, struct vec * hitPos) {
 // REGULAR equal-step raymarch:
 // given a normalized ray with tail at pos,
 // performs raymarch and returns 1 if hit, else 0,
-// and returns position of surface in hitPos if hit
+// and if hit, returns position of surface in hitPos
 int STEPraymarch(struct vec pos, struct vec ray, struct vec * hitPos) {
+  float d = 0;
   for (float i = 0; i < maxMarchDistance; i += stepSize) {
     struct vec currPos = vAdd(pos, scale(ray, i));
-    float minSDF = fabsf(sdScene(currPos));
-    if (minSDF <= (stepSize / 2.0)) {
+    float d = sdScene(currPos);
+    d = fabsf(d);
+    if (d <= (stepSize / 2.0)) {
       // close enough, call a hit
       hitPos->x = currPos.x;
       hitPos->y = currPos.y;
@@ -139,18 +200,18 @@ int STEPraymarch(struct vec pos, struct vec ray, struct vec * hitPos) {
 struct ppm_pixel computeColor(struct vec pos, struct vec ray) {
   struct ppm_pixel color;
   struct vec hitPos = {0, 0, 0, 0};
-  // first compute primary ray
+  struct vec norm = calcNormal(hitPos);
+  // first compute primary ray intersection with surface and normal
   int hit = DAraymarch(pos, ray, &hitPos);
   if (hit == 1) {
     // calculate phong shading color first
-    struct vec norm = calcNormal(hitPos);
     struct vec lightColor = {1.0, 1.0, 1.0, 0.0};
-    // struct vec Ka = {0.24725f, 0.2245f, 0.0645f, 0.0f};
-    // struct vec Kd = {0.34615f, 0.3143f, 0.0903f, 0.0f};
-    // struct vec Ks = {0.797357f, 0.72399f, 0.20801f, 0.0f};
-    struct vec Ka = {0, 0, 0.2f, 0};
-    struct vec Kd = {0, 0.3, 0.7, 0};
-    struct vec Ks = {1, 1, 1, 0};
+    struct vec Ka = {0.24725f, 0.2245f, 0.0645f, 0.0f};
+    struct vec Kd = {0.34615f, 0.3143f, 0.0903f, 0.0f};
+    struct vec Ks = {0.797357f, 0.72399f, 0.20801f, 0.0f};
+    // struct vec Ka = {0, 0, 0.2f, 0};
+    // struct vec Kd = {0, 0.3, 0.7, 0};
+    // struct vec Ks = {1, 1, 1, 0};
     struct lighting shades = phongShading(hitPos, norm, lightColor, lightColor,
         lightColor, Ka, Kd, Ks, 20.0f);
     // color ambient regardless of shadows
@@ -161,7 +222,6 @@ struct ppm_pixel computeColor(struct vec pos, struct vec ray) {
     // then calculate shadow ray
     // normalized direction to light source
     struct vec lightDir = normalize(vSub(lightPos, hitPos));
-    // printf("%.3f %.3f %.3f\n", lightDir.x, lightDir.y, lightDir.z);
     struct vec shadowPos = {0, 0, 0, 0};
     // start slightly away from surface to avoid hitting same point again
     struct vec hitPosPlus = vAdd(hitPos, scale(lightDir, hitRange * 2));
@@ -319,7 +379,7 @@ int main(int argc, char* argv[]) {
 
   // write to file
   new_file[0] = '\0';
-  sprintf(new_file, "raytracer_S%d_%lu.ppm", size, time(0));
+  sprintf(new_file, "mandelbulb_S%d_%lu.ppm", size, time(0));
   printf("Writing file %s\n", new_file);
   write_ppm(new_file, pixels, size, size);
 
