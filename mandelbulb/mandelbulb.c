@@ -10,16 +10,16 @@
 
 int size = 300;
 int numProcesses = 4;
-float xmin = -2;
-float xmax = 2;
-float ymin = -2;
-float ymax = 2;
+float xmin = -1.5;
+float xmax = 1.5;
+float ymin = -1.5;
+float ymax = 1.5;
 struct vec camPos = {0, 0, -5, 1.0};
 struct vec lightPos = {-10, 10, -3, 1.0};
 float hitRange = 0.001f;
 float maxMarchDistance = 500.0f;
 float stepSize = 0.1;
-struct vec cVal = {1, 1, 1, 0};  // constant parameter in function
+int maxSteps = 128;
 int maxIterations = 4;
 
 struct lighting {
@@ -28,12 +28,36 @@ struct lighting {
   struct vec specular;
 };
 
+// calculate distance to the closest intersection of ray with tail at pos and
+// the sphere centered at center with radius radius;
+// returns (near intersection, far intersection) in distance along ray
+// from https://iquilezles.org/articles/intersectors/
+struct vec sphereIntersect(struct vec pos, struct vec ray, struct vec center,
+    float radius) {
+  struct vec intersection;
+  struct vec posDir = vSub(pos, center);
+  // if b < 0, sphere is behind the ray
+  float b = dot(posDir, ray);
+  float c = dot(posDir, posDir) - (radius * radius);
+  float h = (b * b) - c;
+  if (h < 0.0) {
+    // no intersection
+    intersection.x = -1;
+    intersection.y = -1;
+  } else {
+    h = sqrt(h);
+    intersection.x = -b - h;
+    intersection.y = -b + h;
+  }
+  return intersection;
+}
+
 // compute of next iteration of f, given previous v,
 // adapted from https://iquilezles.org/articles/mandelbulb/:
-// finds the eighth power of v, doubles the angle, and adds c
-struct vec f(struct vec v) {
+// finds the eighth power of v, doubles the angle and adds back to origPos
+struct vec f(struct vec origPos, struct vec v) {
   // cartesian to spherical coordinates
-  float r = sqrt(dot(v, v));
+  float r = length(v);
   float theta = acos(v.y / r);
   float phi = atan2(v.x, v.z);
 
@@ -45,17 +69,18 @@ struct vec f(struct vec v) {
 
   // convert back to cartesian coordinates
   struct vec w;
-  w.x = r * sin(theta) * sin(phi);
-  w.y = r * cos(theta);
-  w.z = r * sin(theta) * cos(phi);
+  // using origPos as offset c?
+  w.x = origPos.x + r * sin(theta) * sin(phi);
+  w.y = origPos.y + r * cos(theta);
+  w.z = origPos.z + r * sin(theta) * cos(phi);
 
-  return vAdd(w, cVal);
+  return w;
 }
 
 // optimized computation of next iteration of f, given previous v,
 // adapted from https://iquilezles.org/articles/mandelbulb/:
 // finds the eighth power of v, doubles the angle, and adds c
-struct vec optf(struct vec v) {
+struct vec optf(struct vec origPos, struct vec v) {
   // replace pow(v, 8) by individual multiplications
   float x = v.x;
   float x2 = x * x;
@@ -74,12 +99,13 @@ struct vec optf(struct vec v) {
   float k4 = x2 - y2 + z2;
 
   struct vec w;
-  w.x = 64.0 * x * y * z * (x2 - z2) * k4 * (x4 - 6.0 * x2 * z2 + z4) * k1 * k2;
-  w.y = (-16.0 * y2 * k3 * k4 * k4) + (k1 * k1);
-  w.z = -8.0 * y * k4 * ((x4 * x4) - (28.0 * x4 * x2 * z2) + (70.0 * x4 * z4)
-      - (28.0 * x2 * z2 * z4) + (z4 * z4)) * k1 * k2;
+  w.x = origPos.x + 64.0 * x * y * z * (x2 - z2) * k4 *
+      (x4 - 6.0 * x2 * z2 + z4) * k1 * k2;
+  w.y = origPos.y + (-16.0 * y2 * k3 * k4 * k4) + (k1 * k1);
+  w.z = origPos.z + -8.0 * y * k4 * ((x4 * x4) - (28.0 * x4 * x2 * z2) +
+      (70.0 * x4 * z4) - (28.0 * x2 * z2 * z4) + (z4 * z4)) * k1 * k2;
 
-  return vAdd(w, cVal);
+  return w;
 }
 
 // calculate SDF (signed distance function) from a position pos
@@ -94,7 +120,7 @@ float sdScene(struct vec pos) {
     // compute gradient dw_{n+1} = 8 * |w_n|^7 * dw_n
     dw = 8.0 * pow(m, 7) * dw + 1.0;
     // get next iteration
-    w = f(w);
+    w = f(pos, w);
     m = length(w);
     iter++;
   }
@@ -106,15 +132,15 @@ float sdScene(struct vec pos) {
 }
 
 // calculate the normal at some position pos on a surface
-// by calculating the gradient in every direction (how does a small change
-// along one axis change the SDF?)
-struct vec calcNormal(struct vec pos) {
-  struct vec x1 = {pos.x - 0.001, pos.y, pos.z, 1.0};
-  struct vec x2 = {pos.x + 0.001, pos.y, pos.z, 1.0};
-  struct vec y1 = {pos.x, pos.y - 0.001, pos.z, 1.0};
-  struct vec y2 = {pos.x, pos.y + 0.001, pos.z, 1.0};
-  struct vec z1 = {pos.x, pos.y, pos.z - 0.001, 1.0};
-  struct vec z2 = {pos.x, pos.y, pos.z + 0.001, 1.0};
+// by calculating the gradient in every direction (how does a change
+// by epsilon along one axis change the SDF?)
+struct vec calcNormal(struct vec pos, float epsilon) {
+  struct vec x1 = {pos.x - epsilon, pos.y, pos.z, 1.0};
+  struct vec x2 = {pos.x + epsilon, pos.y, pos.z, 1.0};
+  struct vec y1 = {pos.x, pos.y - epsilon, pos.z, 1.0};
+  struct vec y2 = {pos.x, pos.y + epsilon, pos.z, 1.0};
+  struct vec z1 = {pos.x, pos.y, pos.z - epsilon, 1.0};
+  struct vec z2 = {pos.x, pos.y, pos.z + epsilon, 1.0};
   float deltaX = sdScene(x2) - sdScene(x1);
   float deltaY = sdScene(y2) - sdScene(y1);
   float deltaZ = sdScene(z2) - sdScene(z1);
@@ -150,26 +176,31 @@ struct lighting phongShading(struct vec pos, struct vec norm, struct vec La,
 // performs raymarch and returns 1 if hit, else 0,
 // and if hit, returns position of surface in hitPos
 int DAraymarch(struct vec pos, struct vec ray, struct vec * hitPos) {
-  float totalDistance = 0.0f;
-  float d = 0;
-  while (totalDistance < maxMarchDistance) {
+  // compute distance to bounding sphere to only search w/in bounds
+  struct vec center = {0, 0, 0, 0};
+  struct vec sphereDistance = sphereIntersect(pos, ray, center, 1.25f);
+  if (sphereDistance.y < 0) {
+    // no far intersection, never hit bounding sphere, never hit mandelbulb
+    return 0;
+  }
+  float totalDistance = sphereDistance.x;  // near intersection with sphere
+  int steps = 0;
+  // stop when too many steps or went past far intersection
+  while (steps < maxSteps && totalDistance <= sphereDistance.y) {
     struct vec currPos = vAdd(pos, scale(ray, totalDistance));
-    float d = sdScene(currPos);
-    // d = fabsf(d);
-    // printf("%.3f\n", d);
-    if (d < hitRange) {
+    float minSDF = sdScene(currPos);
+    if (minSDF < hitRange) {
       // close enough, call a hit
-      // printf("HIT\n");
       hitPos->x = currPos.x;
       hitPos->y = currPos.y;
       hitPos->z = currPos.z;
       hitPos->a = currPos.a;
       return 1;
     }
-    totalDistance += d;
+    totalDistance += minSDF;
+    steps++;
   }
-  // printf("----------------\n");
-  // never hit any surface in scene
+  // never hit mandelbulb surface in scene
   return 0;
 }
 
@@ -200,9 +231,9 @@ int STEPraymarch(struct vec pos, struct vec ray, struct vec * hitPos) {
 struct ppm_pixel computeColor(struct vec pos, struct vec ray) {
   struct ppm_pixel color;
   struct vec hitPos = {0, 0, 0, 0};
-  struct vec norm = calcNormal(hitPos);
   // first compute primary ray intersection with surface and normal
   int hit = DAraymarch(pos, ray, &hitPos);
+  struct vec norm = calcNormal(hitPos, 0.0005);
   if (hit == 1) {
     // calculate phong shading color first
     struct vec lightColor = {1.0, 1.0, 1.0, 0.0};
@@ -214,10 +245,6 @@ struct ppm_pixel computeColor(struct vec pos, struct vec ray) {
     // struct vec Ks = {1, 1, 1, 0};
     struct lighting shades = phongShading(hitPos, norm, lightColor, lightColor,
         lightColor, Ka, Kd, Ks, 20.0f);
-    // color ambient regardless of shadows
-    color.red = fmin(shades.ambient.x * 255, 255);
-    color.green = fmin(shades.ambient.y * 255, 255);
-    color.blue = fmin(shades.ambient.z * 255, 255);
 
     // then calculate shadow ray
     // normalized direction to light source
@@ -226,16 +253,19 @@ struct ppm_pixel computeColor(struct vec pos, struct vec ray) {
     // start slightly away from surface to avoid hitting same point again
     struct vec hitPosPlus = vAdd(hitPos, scale(lightDir, hitRange * 2));
 
-    // acute angle, light is in front of object
-    int shadow = DAraymarch(hitPosPlus, lightDir, &shadowPos);
-    if (shadow == 0) {
-      // not in shadow, add diffuse and specular components
-      struct vec allShades = vAdd(vAdd(shades.ambient, shades.diffuse),
+    int hasShadow = DAraymarch(hitPosPlus, lightDir, &shadowPos);
+    struct vec finalColor;
+    if (hasShadow == 0) {
+      // not in shadow, add all components
+      finalColor = vAdd(vAdd(shades.ambient, shades.diffuse),
           shades.specular);
-      color.red = fmin(allShades.x * 255, 255);
-      color.green = fmin(allShades.y * 255, 255);
-      color.blue = fmin(allShades.z * 255, 255);
+    } else {
+      // add just ambient and diffuse components and darken by shadow factor
+      finalColor = vAdd(shades.ambient, shades.diffuse);
     }
+    color.red = fmin(finalColor.x * 255, 255);
+    color.green = fmin(finalColor.y * 255, 255);
+    color.blue = fmin(finalColor.z * 255, 255);
     return color;
   } else {
     // primary ray never hit surface, color black
@@ -314,16 +344,23 @@ int main(int argc, char* argv[]) {
   struct thread_data * data;
 
   int opt;
-  while ((opt = getopt(argc, argv, ":s:p:")) != -1) {
+  while ((opt = getopt(argc, argv, ":s:p:l:r:b:t:")) != -1) {
     switch (opt) {
       case 's': size = atoi(optarg); break;
       case 'p': numProcesses = atoi(optarg); break;
-      case '?': printf("usage: %s -s <size> -p <numProcesses>\n", argv[0]);
+      case 'l': xmin = atoi(optarg); break;
+      case 'r': xmax = atoi(optarg); break;
+      case 'b': ymin = atoi(optarg); break;
+      case 't': ymax = atoi(optarg); break;
+      case '?': printf("usage: %s -s <size> -p <numProcesses> "
+          "-l <xmin> -r <xmax> -b <ymin> -t <ymax>\n", argv[0]);
           break;
     }
   }
   printf("Generating image with size %dx%d\n", size, size);
   printf("  Num processes = %d\n", numProcesses);
+  printf("  x = [%.3f,%.3f]\n", xmin, xmax);
+  printf("  y = [%.3f,%.3f]\n", ymin, ymax);
 
   // allocate memory for thread identifiers
   threads = malloc(sizeof(pthread_t) * numProcesses);
@@ -379,7 +416,8 @@ int main(int argc, char* argv[]) {
 
   // write to file
   new_file[0] = '\0';
-  sprintf(new_file, "mandelbulb_S%d_%lu.ppm", size, time(0));
+  sprintf(new_file, "mandelbulb_S%d_L%.3f_R%.3f_B%.3f_T%.3f_%lu.ppm", size,
+      xmin, xmax, ymin, ymax, time(0));
   printf("Writing file %s\n", new_file);
   write_ppm(new_file, pixels, size, size);
 

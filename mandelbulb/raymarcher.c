@@ -19,6 +19,7 @@ struct vec lightPos = {-10, 10, -5, 1.0};
 float hitRange = 0.001f;
 float maxMarchDistance = 256.0f;
 float stepSize = 0.1;
+float softness = 8;  // softness factor for shadows
 
 struct lighting {
   struct vec ambient;
@@ -53,14 +54,14 @@ float sdScene(struct vec pos) {
 
 // calculate the normal at some position pos on a surface
 // by calculating the gradient in every direction (how does a small change
-// along one axis change the SDF?)
-struct vec calcNormal(struct vec pos) {
-  struct vec x1 = {pos.x - 0.001, pos.y, pos.z, 1.0};
-  struct vec x2 = {pos.x + 0.001, pos.y, pos.z, 1.0};
-  struct vec y1 = {pos.x, pos.y - 0.001, pos.z, 1.0};
-  struct vec y2 = {pos.x, pos.y + 0.001, pos.z, 1.0};
-  struct vec z1 = {pos.x, pos.y, pos.z - 0.001, 1.0};
-  struct vec z2 = {pos.x, pos.y, pos.z + 0.001, 1.0};
+// by epsilon along one axis change the SDF?)
+struct vec calcNormal(struct vec pos, float epsilon) {
+  struct vec x1 = {pos.x - epsilon, pos.y, pos.z, 1.0};
+  struct vec x2 = {pos.x + epsilon, pos.y, pos.z, 1.0};
+  struct vec y1 = {pos.x, pos.y - epsilon, pos.z, 1.0};
+  struct vec y2 = {pos.x, pos.y + epsilon, pos.z, 1.0};
+  struct vec z1 = {pos.x, pos.y, pos.z - epsilon, 1.0};
+  struct vec z2 = {pos.x, pos.y, pos.z + epsilon, 1.0};
   float deltaX = sdScene(x2) - sdScene(x1);
   float deltaY = sdScene(y2) - sdScene(y1);
   float deltaZ = sdScene(z2) - sdScene(z1);
@@ -94,8 +95,12 @@ struct lighting phongShading(struct vec pos, struct vec norm, struct vec La,
 // BUGGY(?) distance-aided raymarch:
 // given a normalized ray with tail at pos,
 // performs raymarch and returns 1 if hit, else 0,
-// and returns position of surface in hitPos if hit
-int DAraymarch(struct vec pos, struct vec ray, struct vec * hitPos) {
+// and returns position of surface in hitPos if hit, and
+//             shadow brightness in [0, 1] (0 = dark, 1 bright);
+// see https://iquilezles.org/articles/rmshadows/ for soft shadows
+int DAraymarch(struct vec pos, struct vec ray, struct vec * hitPos,
+    float * shadowColor) {
+  *shadowColor = 1;  // start with full brightness
   float totalDistance = 0.0f;
   while (totalDistance < maxMarchDistance) {
     struct vec currPos = vAdd(pos, scale(ray, totalDistance));
@@ -106,8 +111,10 @@ int DAraymarch(struct vec pos, struct vec ray, struct vec * hitPos) {
       hitPos->y = currPos.y;
       hitPos->z = currPos.z;
       hitPos->a = currPos.a;
+      *shadowColor = 0;
       return 1;
     }
+    *shadowColor = fmin(*shadowColor, softness * minSDF / totalDistance);
     totalDistance += minSDF;
   }
   // never hit any surface in scene
@@ -118,7 +125,9 @@ int DAraymarch(struct vec pos, struct vec ray, struct vec * hitPos) {
 // given a normalized ray with tail at pos,
 // performs raymarch and returns 1 if hit, else 0,
 // and returns position of surface in hitPos if hit
-int STEPraymarch(struct vec pos, struct vec ray, struct vec * hitPos) {
+int STEPraymarch(struct vec pos, struct vec ray, struct vec * hitPos,
+    float * shadowColor) {
+  *shadowColor = 1;  // start with full brightness
   for (float i = 0; i < maxMarchDistance; i += stepSize) {
     struct vec currPos = vAdd(pos, scale(ray, i));
     float minSDF = fabsf(sdScene(currPos));
@@ -128,8 +137,10 @@ int STEPraymarch(struct vec pos, struct vec ray, struct vec * hitPos) {
       hitPos->y = currPos.y;
       hitPos->z = currPos.z;
       hitPos->a = currPos.a;
+      *shadowColor = 0;
       return 1;
     }
+    *shadowColor = fmin(*shadowColor, softness * minSDF / i);
   }
   // never hit any surface in scene
   return 0;
@@ -137,27 +148,23 @@ int STEPraymarch(struct vec pos, struct vec ray, struct vec * hitPos) {
 
 // computes the color for a specific position and ray direction
 struct ppm_pixel computeColor(struct vec pos, struct vec ray) {
+  float shadowColor;
   struct ppm_pixel color;
   struct vec hitPos = {0, 0, 0, 0};
   // first compute primary ray
-  int hit = DAraymarch(pos, ray, &hitPos);
+  int hit = DAraymarch(pos, ray, &hitPos, &shadowColor);
   if (hit == 1) {
     // calculate phong shading color first
-    struct vec norm = calcNormal(hitPos);
+    struct vec norm = calcNormal(hitPos, 0.0006);
     struct vec lightColor = {1.0, 1.0, 1.0, 0.0};
     // struct vec Ka = {0.24725f, 0.2245f, 0.0645f, 0.0f};
     // struct vec Kd = {0.34615f, 0.3143f, 0.0903f, 0.0f};
     // struct vec Ks = {0.797357f, 0.72399f, 0.20801f, 0.0f};
-    struct vec Ka = {0, 0, 0.2f, 0};
-    struct vec Kd = {0, 0.3, 0.7, 0};
-    struct vec Ks = {1, 1, 1, 0};
+    struct vec Ka = {0.5, 0.5, 0.5, 0};
+    struct vec Kd = {0.5, 0.5, 0.5, 0};
+    struct vec Ks = {0.5, 0.5, 0.5, 0};
     struct lighting shades = phongShading(hitPos, norm, lightColor, lightColor,
         lightColor, Ka, Kd, Ks, 20.0f);
-    // color ambient regardless of shadows
-    color.red = fmin(shades.ambient.x * 255, 255);
-    color.green = fmin(shades.ambient.y * 255, 255);
-    color.blue = fmin(shades.ambient.z * 255, 255);
-
     // then calculate shadow ray
     // normalized direction to light source
     struct vec lightDir = normalize(vSub(lightPos, hitPos));
@@ -166,16 +173,19 @@ struct ppm_pixel computeColor(struct vec pos, struct vec ray) {
     // start slightly away from surface to avoid hitting same point again
     struct vec hitPosPlus = vAdd(hitPos, scale(lightDir, hitRange * 2));
 
-    // acute angle, light is in front of object
-    int shadow = DAraymarch(hitPosPlus, lightDir, &shadowPos);
-    if (shadow == 0) {
-      // not in shadow, add diffuse and specular components
-      struct vec allShades = vAdd(vAdd(shades.ambient, shades.diffuse),
+    int hasShadow = DAraymarch(hitPosPlus, lightDir, &shadowPos, &shadowColor);
+    struct vec finalColor;
+    if (hasShadow == 0) {
+      // not in shadow, add all components
+      finalColor = vAdd(vAdd(shades.ambient, shades.diffuse),
           shades.specular);
-      color.red = fmin(allShades.x * 255, 255);
-      color.green = fmin(allShades.y * 255, 255);
-      color.blue = fmin(allShades.z * 255, 255);
+    } else {
+      // add just ambient and diffuse components and darken by shadow factor
+      finalColor = scale(vAdd(shades.ambient, shades.diffuse), shadowColor);
     }
+    color.red = fmin(finalColor.x * 255, 255);
+    color.green = fmin(finalColor.y * 255, 255);
+    color.blue = fmin(finalColor.z * 255, 255);
     return color;
   } else {
     // primary ray never hit surface, color black

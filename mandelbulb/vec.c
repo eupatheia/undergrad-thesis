@@ -68,3 +68,13 @@ struct vec scale(const struct vec v, const float factor) {
   w.a = 0.0f;
   return w;
 }
+
+// add a number to vector, component-wise
+struct vec offset(const struct vec v, const float offset) {
+  struct vec w;
+  w.x = v.x + offset;
+  w.y = v.y + offset;
+  w.z = v.z + offset;
+  w.a = 0.0f;
+  return w;
+}

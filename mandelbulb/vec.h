@@ -20,5 +20,6 @@ float distance(const struct vec u, const struct vec v);
 float length(const struct vec v);
 struct vec normalize(const struct vec v);
 struct vec scale(const struct vec v, const float factor);
+struct vec offset(const struct vec v, const float offset);
 
 #endif
