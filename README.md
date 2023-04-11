@@ -48,6 +48,10 @@
   - initial implementation of Mandelbulb (order 8, 4 iterations) using Hubbard-Douady potential to get fractal SDF in raymarching
     - algorithm and derivations from [Mandelbulb](https://iquilezles.org/articles/mandelbulb/) (Quilez, 2009)
     - finds vague shape centered at origin, still buggy (see `mandelbulb.c`)
+- [x] **04.11.23: Mandelbulb III**
+  - fixed Mandelbulb (equation and color errors), but only allows camera position along negative z-axis (`mandelbulb.c`)
+    - uses phong shading currently
+  - fixed shading in `raymarcher.c`, attempted to add soft shadows (buggy)
   
 ## Remaining Work Plan
 
