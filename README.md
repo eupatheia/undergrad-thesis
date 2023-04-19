@@ -52,6 +52,14 @@
   - fixed Mandelbulb (equation and color errors), but only allows camera position along negative z-axis (`mandelbulb.c`)
     - uses phong shading currently
   - fixed shading in `raymarcher.c`, attempted to add soft shadows (buggy)
+- [x] **04.18.23: Mandelbulb IV + Debugging**
+  - fixed bugs in `flame.c`
+    - F3 weight was not being printed
+    - Reusing Gaussian noise was incorrect with when called with different (mean, stddev)
+    - mutate() was not preserving sum of probabilities = 1
+  - with bug fixes, 2+2 mu+lambda search seems ideal, jitter by stddev 0.05, colorfulness cutoff 0.33
+  - added 4x4 matrix struct implementation with associated helper functions
+  - fixed y-axis being upside down in `julia.c` and `thread_mandelbrot.c`
   
 ## Remaining Work Plan
 
