@@ -58,15 +58,16 @@ int main(int argc, char* argv[]) {
 
   // process command line arguments
   int opt;
-  while ((opt = getopt(argc, argv, ":s:l:r:t:b:p:")) != -1) {
+  while ((opt = getopt(argc, argv, ":s:l:r:t:b:i:")) != -1) {
     switch (opt) {
       case 's': size = atoi(optarg); break;
       case 'l': xmin = atof(optarg); break;
       case 'r': xmax = atof(optarg); break;
       case 't': ymax = atof(optarg); break;
       case 'b': ymin = atof(optarg); break;
+      case 'i': maxIterations = atoi(optarg); break;
       case '?': printf("usage: %s -s <size> -l <xmin> -r <xmax> "
-        "-b <ymin> -t <ymax> -p <numProcesses>\n", argv[0]); break;
+        "-b <ymin> -t <ymax> -i <maxIterations>\n", argv[0]); break;
     }
   }
   printf("Generating mandelbrot with size %dx%d\n", size, size);
@@ -129,7 +130,8 @@ int main(int argc, char* argv[]) {
 
   // write to file
   new_file[0] = '\0';
-  sprintf(new_file, "mandelbrot-%d-%lu.ppm", size, time(0));
+  sprintf(new_file, "mandelbrot_S%d_I%d_L%.3f_R%.3f_B%.3f_T%.3f_%lu.ppm",
+      size, maxIterations, xmin, xmax, ymin, ymax, time(0));
   printf("Writing file %s\n", new_file);
   write_ppm(new_file, pixels, size, size);
 

@@ -20,10 +20,6 @@ char * funcNames[17] = {"linear", "sinusoidal", "spherical", "swirl",
     "hyperbolic", "diamond", "ex", "julia", "fisheye", "exponential",
     "eyefish"};
 
-// save second generated Gaussian for later
-float noise = 0;  // nothing yet
-int savedNoise = 0;  // if 1, use noise instead of regenerating
-
 // helper function to calculate distance between two points
 float distance(struct point p1, struct point p2) {
   return sqrt(pow(p2.x - p1.x, 2) + pow(p2.y - p1.y, 2));
@@ -46,8 +42,8 @@ void printSystemStats(struct systemInfo * info) {
       info->affineParams[17]);
   }
   if (info->numFunctions > 3) {
-    printf("F2: weight = %.3f\n(%.6f, %.6f, %.6f, %.6f, %.6f, %.6f)\n",
-      info->weights[2], info->affineParams[18], info->affineParams[19],
+    printf("F3: weight = %.3f\n(%.6f, %.6f, %.6f, %.6f, %.6f, %.6f)\n",
+      info->weights[3], info->affineParams[18], info->affineParams[19],
       info->affineParams[20], info->affineParams[21], info->affineParams[22],
       info->affineParams[23]);
   }
@@ -332,23 +328,33 @@ float calculateColorfulness(struct pix_counts ** counts, int internalSize) {
 // using the Box-Mueller Transform:
 // see https://en.wikipedia.org/wiki/Box–Muller_transform
 float randGaussian(float mean, float stddev) {
-  if (savedNoise) {
-    savedNoise = 0;  // reset
-    return noise;
-  }
   float rand1 = randomParam(0, 1);
   float rand2 = randomParam(0, 1);
   float radius = sqrt(-2 * log(rand1));
-  float z = stddev * radius * cos(2 * M_PI * rand2) + mean;
-  noise = stddev * radius * sin(2 * M_PI * rand2) + mean;  // saved for later
-  savedNoise = 1;  // next time use saved noise
-  return z;
+  float z1 = stddev * radius * cos(2 * M_PI * rand2) + mean;
+  float z2 = stddev * radius * sin(2 * M_PI * rand2) + mean;  // saved for later
+  float pick = rand() % 2;
+  if (pick == 0) {
+    return z1;
+  } else {
+    return z2;
+  }
+}
+
+// helper function to clamp a float into the range [least, most]
+void clamp(float * num, float least, float most) {
+  if (*num > most) {
+    *num = most;
+  } else if (*num < least) {
+    *num = least;
+  }
 }
 
 // helper function makes a copy of parent into child, then mutates weights and
 // affine params by some random number sampled from a Gaussian distribution,
 // assuming functions, weights, and affineParams have been freed
-void mutate(struct systemInfo * child, struct systemInfo * parent) {
+void mutate(struct systemInfo * child, struct systemInfo * parent,
+    float weightStdDev, float affineStdDev) {
   child->numFunctions = parent->numFunctions;
   child->symmetry = parent->symmetry;
   child->functions = malloc(sizeof(transform_ptr) * child->numFunctions);
@@ -362,23 +368,32 @@ void mutate(struct systemInfo * child, struct systemInfo * parent) {
   }
 
   // change params by some small random number
-  for (int i = 0; i < child->numFunctions; i++) {
-    child->weights[i] = parent->weights[i] + randGaussian(0, 0.1);
+  float prob = 1;
+  for (int i = 0; i < child->numFunctions - 1; i++) {
+    // slightly jitter from parent weight
+    child->weights[i] = randGaussian(parent->weights[i], weightStdDev);
+    // clamp to remaining probability range
+    clamp(&(child->weights[i]), 0, prob);
+    prob -= child->weights[i];
   }
+  // last function takes remaining probability
+  child->weights[child->numFunctions - 1] = prob;
+
   for (int i = 0; i < numAffine; i++) {
-    child->affineParams[i] = parent->affineParams[i] + randGaussian(0, 0.1);
+    child->affineParams[i] = randGaussian(parent->affineParams[i], affineStdDev);
   }
   printSystemStats(child);
 }
 
 // helper function to calculate objective function,
 // assuming population is sorted by increasing colorfulness;
-// must have colorfulness > 0.15 and positive lyapunov
+// must have colorfulness > colorCutoff and positive lyapunov
 // return index of satisfactory specimen, else return -1
-int objectiveMet(struct specimen * population, int populationSize) {
+int objectiveMet(struct specimen * population, int populationSize,
+    float colorCutoff) {
   for (int i = populationSize - 1; i >= 0; i--) {
     // look for colorfulness first, stop once colorfulness is too low
-    if (population[i].colorfulness < 0.15) {
+    if (population[i].colorfulness < colorCutoff) {
       return -1;
     }
     // colorfulness satisfied, look for chaos
@@ -541,11 +556,10 @@ void generate(int internalSize, int outputSize, float xmin, float xmax,
     float ymin, float ymax, int iterations, int numProcesses,
     struct ppm_pixel ** pixels, struct ppm_pixel * palette, int paletteNum,
     pthread_t * threads, struct thread_data * data, float * gaussian3,
-    float * gaussian5, float * gaussian7, int doSearch) {
+    float * gaussian5, float * gaussian7, int doSearch, int mu, int lambda,
+    float weightStdDev, float affineStdDev, float colorCutoff) {
 
   struct timeval tstart;
-  int mu = 1;  // num retained per generation
-  int lambda = 1;  // num reproduced per generation
   int populationSize;
   // array of 2D count arrays represents the flames in one generation
   struct specimen * population;
@@ -615,7 +629,7 @@ void generate(int internalSize, int outputSize, float xmin, float xmax,
     generations++;
     hybridSort(population, 0, populationSize - 1);  // by colorfulness
     // do evolutionary search until we find a high quality specimen
-    while ((indexOfBest = objectiveMet(population, populationSize)) == -1) {
+    while ((indexOfBest = objectiveMet(population, populationSize, colorCutoff)) == -1) {
       // start another generation
       // replace the lambda lowest quality specimens (i.e. least colorful)
       for (int i = 0; i < lambda; i++) {
@@ -627,7 +641,9 @@ void generate(int internalSize, int outputSize, float xmin, float xmax,
         // make mutated copies of higher-quality specimens
         printf("Child %lu mutating from parent %lu\n", population[i].id,
             population[min(i + lambda, populationSize - 1)].id);
-        mutate(&(population[i].info), &(population[min(i + lambda, populationSize - 1)].info));
+        mutate(&(population[i].info),
+            &(population[min(i + lambda, populationSize - 1)].info),
+            weightStdDev, affineStdDev);
         iterate(&(population[i].info), internalSize, xmin, xmax, ymin, ymax,
             seed, initColor, iterations, population[i].counts, palette,
             &(population[i].maxCount), &lyapunovExp);
@@ -698,7 +714,6 @@ void generate(int internalSize, int outputSize, float xmin, float xmax,
 int main(int argc, char* argv[]) {
   srand(time(0));  // give random seed to generator
   int palettes[12] = {11, 13, 20, 26, 30, 31, 34, 35, 41, 57, 82, 87};
-
   int outputSize = 900;
   int internalSize = outputSize * 3;
   // use bi-unit square
@@ -719,6 +734,11 @@ int main(int argc, char* argv[]) {
   float * gaussian5;
   float * gaussian7;
   int doSearch = 0;  // default no search, i.e. generate one randomly
+  int mu = 2;
+  int lambda = 2;
+  float weightStdDev = 0.05;
+  float affineStdDev = 0.05;
+  float colorCutoff = 0.33;
 
   int opt;
   while ((opt = getopt(argc, argv, ":s:n:c:p:e")) != -1) {
@@ -730,8 +750,8 @@ int main(int argc, char* argv[]) {
       case 'p': numProcesses = atoi(optarg); break;
       case 'e': doSearch = 1; break;  // no colon in opt string b/c no arg
       case '?': printf("usage: %s -s <outputSize> -n <iterations>"
-          " -c <paletteNumber> -p <numProcesses> -e [no args, do evolutionary"
-          "search instead of random generation]\n", argv[0]); break;
+          " -c <paletteNumber> -p <numProcesses> -e [no args, do evolutionary "
+          "search instead of random generation]\n", argv[0]); exit(0);
     }
   }
   printf("Generating flame with size %dx%d\n", outputSize, outputSize);
@@ -800,7 +820,8 @@ int main(int argc, char* argv[]) {
 
   generate(internalSize, outputSize, xmin, xmax, ymin, ymax, iterations,
       numProcesses, pixels, palette, paletteNum, threads, data,
-      gaussian3, gaussian5, gaussian7, doSearch);
+      gaussian3, gaussian5, gaussian7, doSearch, mu, lambda, weightStdDev,
+      affineStdDev, colorCutoff);
 
   // free allocated array memory
   for (int i = 0; i < outputSize; i++) {

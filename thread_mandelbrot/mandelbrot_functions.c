@@ -28,7 +28,8 @@ void computeMandelbrot(int size, int start_row, int end_row, int start_col,
   for (int i = start_row; i < end_row; i++) {
     for (int j = start_col; j < end_col; j++) {
       xfrac = (float) j / size;
-      yfrac = (float) i / size;
+      // must flip rows, otherwise -y axis points up
+      yfrac = (float) (size - i - 1) / size;
       x0 = xmin + xfrac * (xmax - xmin);
       y0 = ymin + yfrac * (ymax - ymin);
 

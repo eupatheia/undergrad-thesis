@@ -3,6 +3,18 @@
 #include <math.h>
 #include "vec.h"
 
+// reset values inside the struct
+void set(struct vec * v, float x, float y, float z, float a) {
+  v->x = x;
+  v->y = y;
+  v->z = z;
+  v->a = a;
+}
+
+void printVec(const struct vec v) {
+  printf("(%.3f %.3f %.3f %.3f)\n", v.x, v.y, v.z, v.a);
+}
+
 struct vec vAdd(const struct vec u, const struct vec v) {
   struct vec w;
   w.x = u.x + v.x;
@@ -40,7 +52,7 @@ struct vec vPow(const struct vec v, float exp) {
 }
 
 float dot(const struct vec u, const struct vec v) {
-  return (u.x * v.x) + (u.y * v.y) + (u.z * v.z);
+  return (u.x * v.x) + (u.y * v.y) + (u.z * v.z) + (u.a * v.a);
 }
 
 float distance(const struct vec u, const struct vec v) {
@@ -76,5 +88,15 @@ struct vec offset(const struct vec v, const float offset) {
   w.y = v.y + offset;
   w.z = v.z + offset;
   w.a = 0.0f;
+  return w;
+}
+
+// cross product of two vectors
+struct vec cross(const struct vec u, const struct vec v) {
+  struct vec w;
+  w.x = (u.y * v.z) - (u.z * v.y);
+  w.y = (u.z * v.x) - (u.x * v.z);
+  w.z = (u.x * v.y) - (u.y * v.x);
+  w.a = 1.0f;
   return w;
 }

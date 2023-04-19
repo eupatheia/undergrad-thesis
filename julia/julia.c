@@ -143,8 +143,9 @@ int main(int argc, char* argv[]) {
       case 's': size = atoi(optarg); break;
       case 'l': xmin = atof(optarg); break;
       case 'r': xmax = atof(optarg); break;
-      case 't': ymax = atof(optarg); break;
-      case 'b': ymin = atof(optarg); break;
+      // switch t and b, else -y axis points up
+      case 't': ymin = atof(optarg); break;
+      case 'b': ymax = atof(optarg); break;
       case 'p': numProcesses = atoi(optarg); break;
       case 'x': cx = atof(optarg); break;
       case 'y': cy = atof(optarg); break;
