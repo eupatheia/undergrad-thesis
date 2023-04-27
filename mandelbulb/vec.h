@@ -29,5 +29,7 @@ struct vec normalize(const struct vec v);
 struct vec scale(const struct vec v, const float factor);
 struct vec offset(const struct vec v, const float offset);
 struct vec cross(const struct vec u, const struct vec v);
+struct vec reflect(const struct vec v, const struct vec n);
+struct vec refract(struct vec v, struct vec n, float refractiveIndexRatio);
 
 #endif

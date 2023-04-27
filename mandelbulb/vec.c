@@ -100,3 +100,29 @@ struct vec cross(const struct vec u, const struct vec v) {
   w.a = 1.0f;
   return w;
 }
+
+// return the ray resulting from reflecting v about normal n
+struct vec reflect(const struct vec v, const struct vec n) {
+  return vAdd(scale(n, -2 * dot(v, n)), v);
+}
+
+// return the ray resulting from refracting v off a surface with normal n,
+// given a ratio of refractive indices for each color channel
+struct vec refract(struct vec v, struct vec n,
+    float refractiveIndexRatio) {
+  v = normalize(v);
+  n = normalize(n);
+  float cosTheta = dot(scale(v, -1), n) / (length(v) * length(n));
+  struct vec perpendicular = scale(vAdd(v, scale(n, cosTheta)),
+      refractiveIndexRatio);
+  float modPerpSq = pow(length(perpendicular), 2);
+  if (modPerpSq > 1) {
+    // total internal reflection, no refraction
+    return reflect(v, n);
+  } else {
+    // struct vec parallel = scale(n, -sqrt(1 - (refractiveIndexRatio *
+    //     refractiveIndexRatio * (1 - (cosTheta * cosTheta)))));
+    struct vec parallel = scale(n, -sqrt(1 - modPerpSq));
+    return vAdd(perpendicular, parallel);
+  }
+}

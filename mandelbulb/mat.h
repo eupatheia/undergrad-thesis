@@ -23,5 +23,9 @@ struct mat transpose(const struct mat m);
 
 struct mat getViewMat(const struct vec eyePos, const struct vec lookPos,
     const struct vec upDir);
+struct mat getInvViewMat(const struct vec eyePos, const struct vec lookPos,
+    const struct vec upDir);
+struct mat getInvProjMat(const float left, const float right,
+    const float bottom, const float top, const float near, const float far);
 
 #endif

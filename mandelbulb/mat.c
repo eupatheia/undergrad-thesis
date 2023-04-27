@@ -64,3 +64,30 @@ struct mat getViewMat(const struct vec eyePos, const struct vec lookPos,
   V.d = negRTd;
   return V;
 }
+
+// construct inverse view matrix
+struct mat getInvViewMat(const struct vec eyePos, const struct vec lookPos,
+    const struct vec upDir) {
+  // n points behind camera
+  struct vec n = normalize(vSub(eyePos, lookPos));
+  // v points sideways
+  struct vec v = normalize(cross(upDir, n));
+  // u points up
+  struct vec u = normalize(cross(n, v));
+
+  struct mat M = {v, u, n, eyePos};
+  M.d.a = 1;
+  return M;
+}
+
+// construct inverse ortho projection matrix
+struct mat getInvProjMat(const float left, const float right,
+    const float bottom, const float top, const float near, const float far) {
+  struct vec a = {2.0 / (right - left), 0, 0, 0};
+  struct vec b = {0, 2.0 / (top - bottom), 0, 0};
+  struct vec c = {0, 0, 2.0 / (far - near), 0};
+  struct vec d = {(left + right) / 2.0, (top + bottom) / 2.0,
+      (near + far) / 2.0, 1};
+  struct mat M = {a, b, c, d};
+  return M;
+}

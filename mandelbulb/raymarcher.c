@@ -7,6 +7,7 @@
 #include <math.h>
 #include "read_write.h"
 #include "vec.h"
+#include "mat.h"
 
 int size = 300;
 int numProcesses = 4;
@@ -111,10 +112,12 @@ int DAraymarch(struct vec pos, struct vec ray, struct vec * hitPos,
       hitPos->y = currPos.y;
       hitPos->z = currPos.z;
       hitPos->a = currPos.a;
-      *shadowColor = 0;
+      *shadowColor = 0.1;
       return 1;
     }
-    *shadowColor = fmin(*shadowColor, softness * minSDF / totalDistance);
+    // clamp between 0.1 and 1
+    *shadowColor = fmax(fmin(*shadowColor, softness * minSDF / totalDistance), 0.1);
+    // printf("%.3f = %.3f\n", minSDF, *shadowColor);
     totalDistance += minSDF;
   }
   // never hit any surface in scene
@@ -160,7 +163,7 @@ struct ppm_pixel computeColor(struct vec pos, struct vec ray) {
     // struct vec Ka = {0.24725f, 0.2245f, 0.0645f, 0.0f};
     // struct vec Kd = {0.34615f, 0.3143f, 0.0903f, 0.0f};
     // struct vec Ks = {0.797357f, 0.72399f, 0.20801f, 0.0f};
-    struct vec Ka = {0.5, 0.5, 0.5, 0};
+    struct vec Ka = {0.1, 0.1, 0.1, 0};
     struct vec Kd = {0.5, 0.5, 0.5, 0};
     struct vec Ks = {0.5, 0.5, 0.5, 0};
     struct lighting shades = phongShading(hitPos, norm, lightColor, lightColor,
@@ -171,17 +174,18 @@ struct ppm_pixel computeColor(struct vec pos, struct vec ray) {
     // printf("%.3f %.3f %.3f\n", lightDir.x, lightDir.y, lightDir.z);
     struct vec shadowPos = {0, 0, 0, 0};
     // start slightly away from surface to avoid hitting same point again
-    struct vec hitPosPlus = vAdd(hitPos, scale(lightDir, hitRange * 2));
+    struct vec hitPosPlus = vAdd(hitPos, scale(lightDir, hitRange * 10));
 
     int hasShadow = DAraymarch(hitPosPlus, lightDir, &shadowPos, &shadowColor);
     struct vec finalColor;
-    if (hasShadow == 0) {
-      // not in shadow, add all components
+    if (dot(norm, lightDir) <= 0) {
+      // surface not facing light, add all components
       finalColor = vAdd(vAdd(shades.ambient, shades.diffuse),
           shades.specular);
     } else {
-      // add just ambient and diffuse components and darken by shadow factor
-      finalColor = scale(vAdd(shades.ambient, shades.diffuse), shadowColor);
+      // darken by shadow factor
+      finalColor = scale(vAdd(vAdd(shades.ambient, shades.diffuse),
+          shades.specular), shadowColor);
     }
     color.red = fmin(finalColor.x * 255, 255);
     color.green = fmin(finalColor.y * 255, 255);
@@ -329,7 +333,7 @@ int main(int argc, char* argv[]) {
 
   // write to file
   new_file[0] = '\0';
-  sprintf(new_file, "raytracer_S%d_%lu.ppm", size, time(0));
+  sprintf(new_file, "raymarcher_S%d_%lu.ppm", size, time(0));
   printf("Writing file %s\n", new_file);
   write_ppm(new_file, pixels, size, size);
 

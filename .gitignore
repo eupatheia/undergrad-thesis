@@ -31,6 +31,12 @@
 *.out
 *.app
 test
+buddhabrot/color_buddhabrot
+fractal_flame/flame
+julia/julia
+mandelbulb/mandelbulb
+mandelbulb/raymarcher
+thread_mandelbrot/thread_mandelbrot
 
 # Other
 .vscode
