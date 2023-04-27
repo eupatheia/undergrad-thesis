@@ -1,3 +1,77 @@
+# Visualizing Chaotic Systems
+
+This work explores 5 different iterative algorithms that form fractals, all implemented on CPU using threads:
+- Filled Julia Set
+- Mandelbrot Set
+- Mandelbulb
+- Buddhabrot Set
+- Fractal Flames
+
+## Mandelbulb Demo
+
+The Mandelbulb is a 3D Mandelbrot-like object that has fractal qualities.  Here, we render it using raymarching and signed distance functions (SDFs) to approximate the surface (see [Quilez's Mandelbulb article](https://iquilezles.org/articles/mandelbulb/) for the algorithm).  Parts of the volumetric coloring algorithm were adapted from [this Shadertoy page](https://www.shadertoy.com/view/wt33Wl), and the soft shadow algorithm came from [this article](https://iquilezles.org/articles/rmshadows/).  This implementation outputs a ppm image and does not allow for user interaction.  However, the image size, number of threads, anti-aliasing filter size, and coloring scheme can be adjusted by command line arguments.  Camera position and other parameters currently cannot be adjusted from the command line.  The gif below was compiled from 36 separate images.
+
+![ezgif com-crop-2-2-2-2](https://user-images.githubusercontent.com/75283980/234853201-abf16bc2-806a-49e4-9c38-7fc4289a6919.gif)
+
+### How to Build
+
+Download the `mandelbulb` folder and navigate to the directory in the terminal.
+
+To build the program, type `make mandelbulb`.
+
+To run the program, use the following command, with optional flags:
+```
+./mandelbulb -s <size> -p <numProcesses> -a <antialiasingFilterWidth> -c <colorSetting>
+```
+- `size`: the width or height of the output image, in pixels (default 300)
+- `numProcesses`: number of threads to use (default 4)
+- `antialiasingFilterWidth`: the size of the filter used for anti-aliasing (default 1)
+  - e.g. an argument of 2 means the program will average 2x2=4 point samples within a pixel to compute the final color for the pixel
+- `colorSetting`: the coloring scheme to be used (default normal)
+  -  1 = phong shading
+  -  2 = total reflection
+  -  3 = total refraction
+  -  4 = dielectric
+  -  5 = chromatic dispersion
+  -  6 = volumetric
+  -  (other) = normal
+  
+### Features and Results
+
+#### Anti-Aliasing
+
+<img src="https://user-images.githubusercontent.com/75283980/234854498-43b57bad-6b69-4c2b-8610-368d24bbdd56.png" height=450px/> <img src="https://user-images.githubusercontent.com/75283980/234854571-b5fef8c3-12ec-43ac-ac80-ce3516df3206.png" height=450px/>
+
+#### Surface Normals as Colors, Camera Rotation
+
+<img src="https://user-images.githubusercontent.com/75283980/234853730-0e4b092d-2f14-43bd-ad4d-6639209fa09f.png" height=300px/> <img src="https://user-images.githubusercontent.com/75283980/234853800-0ee18ce5-7096-4579-9df9-5e558a174bd8.png" height=300px/> <img src="https://user-images.githubusercontent.com/75283980/234853812-31a976ad-f847-4758-b81d-0270fa8d182c.png" height=300px/>
+
+#### Phong Model Shading + Soft Shadows, Gradient Background
+
+<img src="https://user-images.githubusercontent.com/75283980/234855330-3a11d28c-9a90-43b3-ac69-2ef55a9fc72d.png" height=500px/>
+
+#### Total Reflection, Procedural Cube Map
+
+<img src="https://user-images.githubusercontent.com/75283980/234855632-858c6181-18f4-43dd-8023-34f3b1ed5f36.png" height=500px/>
+
+#### Total Refraction
+
+<img src="https://user-images.githubusercontent.com/75283980/234855778-5620971d-c645-4f72-9b86-35d7e30ce6ce.png" height=500px/>
+
+#### Dielectric Material
+
+<img src="https://user-images.githubusercontent.com/75283980/234855845-05cd14be-0175-4523-aa79-0ca0151b9bfa.png" height=500px/>
+
+#### Chromatic Dispersion
+
+<img src="https://user-images.githubusercontent.com/75283980/234856096-14d3ae6a-b88a-4e93-b5b3-a57444296da3.png" height=300px/> <img src="https://user-images.githubusercontent.com/75283980/234856710-f98450d1-58c5-418b-b9a6-bb86d2558bd7.png" height=300px/> <img src="https://user-images.githubusercontent.com/75283980/234856192-047ce936-e2d2-4bbc-912a-6bf446be91c6.png" height=300px/> 
+
+#### Volumetric Rendering
+
+<img src="https://user-images.githubusercontent.com/75283980/234857220-2bd38ea1-e14a-4753-8f16-53b79c3b1d33.png" height=300px/> <img src="https://user-images.githubusercontent.com/75283980/234857238-5e94e11c-64cf-46f3-9799-17c57b2b57c0.png" height=300px/> <img src="https://user-images.githubusercontent.com/75283980/234857253-8d4f2f6f-6df7-40ed-8c69-aed99a3de64f.png" height=300px/>
+
+---
+
 ## Progress Log
 
 - [x] **01.31.23: Color Buddhabrot**
@@ -60,12 +134,10 @@
   - with bug fixes, 2+2 mu+lambda search seems ideal, jitter by stddev 0.05, colorfulness cutoff 0.33
   - added 4x4 matrix struct implementation with associated helper functions
   - fixed y-axis being upside down in `julia.c` and `thread_mandelbrot.c`
-  
-## Remaining Work Plan
-
-- [ ] Fractal Anatomy: Imaging internal fractal structures (SIGGRAPH paper)
-- [ ] Fractals in procedural graphics: clouds and terrain
-  - [ ] Texturing and modeling: A Procedural Approach by Ebert, Musgrave, Peachey, Perlin, and Worley (Chpts “A brief introduction to fractals”, “Fractal solid textures: clouds”, and “procedural fractal terrains”
-- [ ] Buddhabrot equivalent for non-quadratic functions?
- 
-Readings: https://www.dropbox.com/sh/ov7c5nmmzrbm3d9/AAAwfBCoOcqTh3RR2El8jKxJa?dl=0
+- [x] **04.27.23: Mandelbulb V**
+  - implemented camera rotation (inverse view matrix) in `mandelbulb.c`
+  - organized helper functions into different files `ray_functions.c` and `shaders.c`, global to local variables
+  - implemented anti-aliasing option (average colors of point samples within a pixel to get final color)
+  - allow for 7 different coloring schemes, chosen by command line args
+  - implemented environment mapping, i.e. procedural cubemap, gradient background
+  - colorings: normal, phong + soft shadows, reflection, refraction, dielectric, chromatic dispersion, volumetric
