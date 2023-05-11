@@ -108,15 +108,16 @@ struct vec f(struct vec origPos, struct vec v) {
 // optimized computation of next iteration of f, given previous v,
 // adapted from https://iquilezles.org/articles/mandelbulb/:
 // finds the eighth power of v, doubles the angle, and adds c
+// BUGGY??
 struct vec optf(struct vec origPos, struct vec v) {
   // replace pow(v, 8) by individual multiplications
-  struct vec w = origPos;
+  struct vec w = v;
   float x = w.x; float x2 = x*x; float x4 = x2*x2;
   float y = w.y; float y2 = y*y; float y4 = y2*y2;
   float z = w.z; float z2 = z*z; float z4 = z2*z2;
 
   float k3 = x2 + z2;
-  float k2 = 1.0f / sqrt( k3*k3*k3*k3*k3*k3*k3 );
+  float k2 = 1.0f / sqrt( k3*k3*k3*k3*k3*k3*k3 );  // problematic?
   float k1 = x4 + y4 + z4 - 6.0*y2*z2 - 6.0*x2*y2 + 2.0*z2*x2;
   float k4 = x2 - y2 + z2;
 
@@ -138,7 +139,7 @@ float sdScene(struct vec pos, int maxIterations) {
     // compute gradient dw_{n+1} = 8 * |w_n|^7 * dw_n
     dw = 8.0 * pow(m, 7) * dw + 1.0;
     // get next iteration
-    w = optf(pos, w);
+    w = f(pos, w);
     m = length(w);
     iter++;
   }
