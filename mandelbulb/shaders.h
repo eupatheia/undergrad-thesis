@@ -35,4 +35,9 @@ struct ppm_pixel volumetricShader(struct vec origPos, struct vec ray,
     struct vec hitPos, struct vec norm, float yratio, int maxIterations,
     float refractiveIndexRatio, int maxSteps, float hitRange,
     float softness);
+struct ppm_pixel blendShader(struct vec origPos, struct vec ray,
+    struct vec hitPos, struct vec norm, float yratio, int maxIterations,
+    float refractiveIndexRatio, int maxSteps, float hitRange,
+    float softness);
+    
 #endif

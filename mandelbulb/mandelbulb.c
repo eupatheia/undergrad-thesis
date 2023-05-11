@@ -42,6 +42,9 @@ struct ppm_pixel computeColor(int shader, struct vec pos, struct vec ray,
     } else if (shader == 6) {
       return volumetricShader(pos, ray, hitPos, norm, yratio, maxIterations,
           0.9, maxSteps, hitRange, softness);
+    } else if (shader == 7) {
+      return blendShader(pos, ray, hitPos, norm, yratio, maxIterations,
+          0.9, maxSteps, hitRange, softness);
     } else {
       return normalShader(yratio, norm);  // default normal coloring
     }
@@ -199,6 +202,7 @@ int main(int argc, char* argv[]) {
           "  4 = dielectric\n"
           "  5 = chromatic dispersion\n"
           "  6 = volumetric\n"
+          "  7 = dielectric + volumetric\n"
           "  (other) = normal\n", argv[0]);
           exit(0);
     }

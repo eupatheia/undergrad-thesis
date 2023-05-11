@@ -121,16 +121,17 @@ struct ppm_pixel reflectShader(struct vec ray, struct vec norm,
     struct vec hitPos) {
   // reflect viewing ray about the surface normal
   struct vec r = reflect(ray, norm);
-  float distanceToBox = sdBox(hitPos, r, -10, 10, -10, 10, -10, 10);
-  struct vec cubePoint = vAdd(hitPos, scale(r, distanceToBox));
-  int face = findFace(cubePoint, -10, 10, -10, 10, -10, 10);
-  if (face != 0) {
-    return twoPlaneCubemap(face, cubePoint.y);
-  } else { // face == 0
-    // must intersect a face, error
-    printf("Error, ray did not intersect the skybox\n");
-    exit(0);
+  float distanceToBox;
+  struct vec currPos = hitPos;
+  int face = 0;
+  while (face == 0) {
+    printf("%d ", face);
+    distanceToBox = sdBox(currPos, r, -10, 10, -10, 10, -10, 10);
+    currPos = vAdd(currPos, scale(r, distanceToBox));
+    face = findFace(currPos, -10, 10, -10, 10, -10, 10);
   }
+  printf("%d ", face);
+  return twoPlaneCubemap(face, currPos.y);
 }
 
 // simulate refraction color of ray about norm at hitPos,
@@ -139,16 +140,17 @@ struct ppm_pixel refractShader(struct vec ray, struct vec norm,
     struct vec hitPos, float refractiveIndexRatio) {
   // refract viewing ray at the surface normal
   struct vec r = refract(ray, norm, refractiveIndexRatio);
-  float distanceToBox = sdBox(hitPos, r, -10, 10, -10, 10, -10, 10);
-  struct vec cubePoint = vAdd(hitPos, scale(r, distanceToBox));
-  int face = findFace(cubePoint, -10, 10, -10, 10, -10, 10);
-  if (face != 0) {
-    return twoPlaneCubemap(face, cubePoint.y);
-  } else { // face == 0
-    // must intersect a face, error
-    printf("Error, ray did not intersect the skybox\n");
-    exit(0);
+  float distanceToBox;
+  struct vec currPos = hitPos;
+  int face = 0;
+  while (face == 0) {
+    printf("%d ", face);
+    distanceToBox = sdBox(currPos, r, -10, 10, -10, 10, -10, 10);
+    currPos = vAdd(currPos, scale(r, distanceToBox));
+    face = findFace(currPos, -10, 10, -10, 10, -10, 10);
   }
+  printf("%d ", face);
+  return twoPlaneCubemap(face, currPos.y);
 }
 
 // dielectric shader (combo of reflection and refraction colors using 
@@ -209,6 +211,46 @@ struct ppm_pixel volumetricShader(struct vec origPos, struct vec ray,
         ((1.0 - transmitivityDelta) / kappa) * transmitivity));
   }
   struct ppm_pixel background = backgroundColor(yratio);
+  struct ppm_pixel color;
+  // get final color and clamp to range
+  color.red = clampInt(((background.red / 255.0 * transmitivity) + c.x)
+      * 255, 0, 255);
+  color.green = clampInt(((background.green / 255.0 * transmitivity) + c.y)
+      * 255, 0, 255);
+  color.blue = clampInt(((background.blue / 255.0 * transmitivity) + c.z)
+      * 255, 0, 255);
+  return color;
+}
+
+// blend dielectric and volumetric shading
+struct ppm_pixel blendShader(struct vec origPos, struct vec ray,
+    struct vec hitPos, struct vec norm, float yratio, int maxIterations,
+    float refractiveIndexRatio, int maxSteps, float hitRange,
+    float softness) {
+  ray = normalize(ray);
+  struct vec center = {0, 0, 0, 0};  // center of object
+  float transmitivity = 1.0;
+  float kappa = 0.2;  // hyperparam
+  struct vec c = {0.0, 0.0, 0.0, 1.0};  // accumulated color
+  float stepSize = 0.01;
+  // calculate far intersection with bulb along ray
+  struct vec farHitPos = farBulbIntersect(origPos, ray, hitPos,
+      maxIterations, maxSteps, hitRange, softness);
+  float range = length(vSub(farHitPos, hitPos));
+  // printf("%.3f\n", range);
+  for (float t = 0; t < range; t += stepSize) {
+    // step along ray, currPos is already local WRT center at origin
+    struct vec currPos = vAdd(hitPos, scale(ray, t));
+    // calculate transmitivity based on current density
+    float d = density(currPos);
+    float transmitivityDelta = exp(-kappa * stepSize * d);
+    transmitivity *= transmitivityDelta;
+    struct vec pcolor = puffcolor(currPos);
+    // accumulate color from current position
+    c = vAdd(c, scale(pcolor,
+        ((1.0 - transmitivityDelta) / kappa) * transmitivity));
+  }
+  struct ppm_pixel background = dielectricShader(ray, norm, hitPos, 0.9);
   struct ppm_pixel color;
   // get final color and clamp to range
   color.red = clampInt(((background.red / 255.0 * transmitivity) + c.x)

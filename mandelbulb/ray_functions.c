@@ -148,7 +148,7 @@ float sdScene(struct vec pos, int maxIterations) {
     // compute gradient dw_{n+1} = 8 * |w_n|^7 * dw_n
     dw = 8.0 * pow(m, 7) * dw + 1.0;
     // get next iteration
-    w = f(pos, w);
+    w = optf(pos, w);
     m = length(w);
     iter++;
   }
