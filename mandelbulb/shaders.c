@@ -125,12 +125,10 @@ struct ppm_pixel reflectShader(struct vec ray, struct vec norm,
   struct vec currPos = hitPos;
   int face = 0;
   while (face == 0) {
-    printf("%d ", face);
     distanceToBox = sdBox(currPos, r, -10, 10, -10, 10, -10, 10);
     currPos = vAdd(currPos, scale(r, distanceToBox));
     face = findFace(currPos, -10, 10, -10, 10, -10, 10);
   }
-  printf("%d ", face);
   return twoPlaneCubemap(face, currPos.y);
 }
 
@@ -144,12 +142,10 @@ struct ppm_pixel refractShader(struct vec ray, struct vec norm,
   struct vec currPos = hitPos;
   int face = 0;
   while (face == 0) {
-    printf("%d ", face);
     distanceToBox = sdBox(currPos, r, -10, 10, -10, 10, -10, 10);
     currPos = vAdd(currPos, scale(r, distanceToBox));
     face = findFace(currPos, -10, 10, -10, 10, -10, 10);
   }
-  printf("%d ", face);
   return twoPlaneCubemap(face, currPos.y);
 }
 
