@@ -120,16 +120,23 @@ struct ppm_pixel phongShadowShader(struct vec pos, struct vec hitPos,
 struct ppm_pixel reflectShader(struct vec ray, struct vec norm,
     struct vec hitPos) {
   // reflect viewing ray about the surface normal
-  struct vec r = reflect(ray, norm);
-  float distanceToBox;
-  struct vec currPos = hitPos;
-  int face = 0;
-  while (face == 0) {
-    distanceToBox = sdBox(currPos, r, -10, 10, -10, 10, -10, 10);
-    currPos = vAdd(currPos, scale(r, distanceToBox));
-    face = findFace(currPos, -10, 10, -10, 10, -10, 10);
+  struct vec r = normalize(reflect(ray, norm));
+  float distanceToBox = sdBox(hitPos, r, -10, 10, -10, 10, -10, 10);
+  struct vec cubePoint = vAdd(hitPos, scale(r, distanceToBox));
+  int face = findFace(cubePoint, -10, 10, -10, 10, -10, 10);
+  if (face != 0) {
+    return twoPlaneCubemap(face, cubePoint.y);
+  } else { // face == 0
+    // must intersect a face, error
+    printf("Error, ray did not intersect the skybox: ");
+    printVec(cubePoint);
+    printVec(hitPos);
+    printVec(ray);
+    printVec(norm);
+    printVec(r);
+    printf("%.3f\n", distanceToBox);
+    exit(0);
   }
-  return twoPlaneCubemap(face, currPos.y);
 }
 
 // simulate refraction color of ray about norm at hitPos,
@@ -138,15 +145,22 @@ struct ppm_pixel refractShader(struct vec ray, struct vec norm,
     struct vec hitPos, float refractiveIndexRatio) {
   // refract viewing ray at the surface normal
   struct vec r = refract(ray, norm, refractiveIndexRatio);
-  float distanceToBox;
-  struct vec currPos = hitPos;
-  int face = 0;
-  while (face == 0) {
-    distanceToBox = sdBox(currPos, r, -10, 10, -10, 10, -10, 10);
-    currPos = vAdd(currPos, scale(r, distanceToBox));
-    face = findFace(currPos, -10, 10, -10, 10, -10, 10);
+  float distanceToBox = sdBox(hitPos, r, -10, 10, -10, 10, -10, 10);
+  struct vec cubePoint = vAdd(hitPos, scale(r, distanceToBox));
+  int face = findFace(cubePoint, -10, 10, -10, 10, -10, 10);
+  if (face != 0) {
+    return twoPlaneCubemap(face, cubePoint.y);
+  } else { // face == 0
+    // must intersect a face, error
+    printf("Error, ray did not intersect the skybox: ");
+    printVec(cubePoint);
+    printVec(hitPos);
+    printVec(ray);
+    printVec(norm);
+    printVec(r);
+    printf("%.3f\n", distanceToBox);
+    exit(0);
   }
-  return twoPlaneCubemap(face, currPos.y);
 }
 
 // dielectric shader (combo of reflection and refraction colors using 
